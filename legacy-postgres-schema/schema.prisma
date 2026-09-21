@@ -1,0 +1,687 @@
+// Speak2Split — Production Database Schema
+// PostgreSQL + Prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================================
+// ENUMS
+// ==========================================================
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  APPLE
+}
+
+enum GroupType {
+  FLAT
+  TRIP
+  FAMILY
+  FRIENDS
+  COUPLE
+  EVENT
+  CUSTOM
+}
+
+enum GroupRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum GroupMemberStatus {
+  INVITED
+  ACTIVE
+  LEFT
+  REMOVED
+}
+
+enum SplitMethod {
+  EQUAL
+  EXACT
+  PERCENTAGE
+  SHARES
+}
+
+enum ExpenseSource {
+  MANUAL
+  VOICE
+  RECEIPT_OCR
+  RECURRING
+  TEMPLATE
+}
+
+enum ExpenseStatus {
+  ACTIVE
+  DELETED
+}
+
+enum SettlementMethod {
+  CASH
+  UPI
+  BANK_TRANSFER
+  OTHER
+}
+
+enum SettlementStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum RecurringFrequency {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  YEARLY
+  CUSTOM
+}
+
+enum NotificationChannel {
+  IN_APP
+  PUSH
+  EMAIL
+  WHATSAPP
+}
+
+enum NotificationType {
+  EXPENSE_ADDED
+  EXPENSE_EDITED
+  EXPENSE_DELETED
+  PAYMENT_REMINDER
+  SETTLEMENT_CREATED
+  SETTLEMENT_COMPLETED
+  GROUP_INVITATION
+  MEMBER_JOINED
+  RECURRING_EXPENSE_CREATED
+  COMMENT_ADDED
+  SHOPPING_ITEM_UPDATED
+  OTHER
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  SKIPPED_PREFERENCE
+}
+
+enum NameResolutionSource {
+  GROUP_MEMBER
+  RECENT_PARTICIPANT
+  FREQUENT_CONTACT
+  BROADER_CONTACT
+  MANUAL_CONFIRMATION
+}
+
+// ==========================================================
+// USERS & AUTH
+// ==========================================================
+
+model User {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  emailVerified      Boolean   @default(false)
+  phone              String?
+  passwordHash       String? // null if social-only account
+  displayName        String
+  firstName          String?
+  lastName            String?
+  avatarUrl          String?
+  defaultCurrency    String    @default("INR")
+  timezone           String    @default("Asia/Kolkata")
+  clerkUserId        String?   @unique
+  isActive           Boolean   @default(true)
+  deletedAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  authAccounts        AuthAccount[]
+  sessions            Session[]
+  groupMemberships    GroupMember[]
+  contacts            Contact[]              @relation("ContactOwner")
+  contactOf           Contact[]              @relation("ContactTarget")
+  nameAliases         NameAlias[]
+  paidExpenses        ExpensePayer[]
+  participatedExpenses ExpenseParticipant[]
+  createdExpenses     Expense[]              @relation("ExpenseCreator")
+  settlementsFrom     Settlement[]           @relation("SettlementPayer")
+  settlementsTo       Settlement[]           @relation("SettlementPayee")
+  templates           ExpenseTemplate[]
+  notifications       Notification[]
+  notificationPrefs   NotificationPreference[]
+  notificationDevices NotificationDevice[]
+  comments            Comment[]
+  shoppingItemsAdded  ShoppingItem[]         @relation("ShoppingItemAddedBy")
+  shoppingItemsAssigned ShoppingItem[]       @relation("ShoppingItemAssignee")
+  documentsUploaded   Document[]
+  activityEvents      ActivityEvent[]
+  auditRecords        AuditRecord[]
+
+  @@index([email])
+  @@index([clerkUserId])
+}
+
+model AuthAccount {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider       AuthProvider
+  providerUserId String // sub/id from Google, Apple, etc.
+  accessToken    String?
+  refreshToken   String?
+  expiresAt      DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken String   @unique
+  userAgent    String?
+  ipAddress    String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ==========================================================
+// CONTACTS / CONTEXT / NAME RESOLUTION
+// ==========================================================
+
+// A "contact" is how ownerUser knows another person — may or may not map to a User account.
+model Contact {
+  id              String   @id @default(cuid())
+  ownerUserId     String
+  ownerUser       User     @relation("ContactOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  targetUserId    String? // set once the contact is a real registered user
+  targetUser      User?    @relation("ContactTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  displayName     String // e.g. "Vanshika Agarwal" — DISPLAY LABEL ONLY, never an identity key
+  firstName       String
+  lastName        String?
+  phone           String? // raw, as entered/synced
+  email           String?
+  normalizedPhone String? // last-10-digits comparison key; see contact-matching.ts
+  normalizedEmail String? // lowercase-trimmed comparison key
+  source          String   @default("MANUAL") // MANUAL | DEVICE_CONTACT_SYNC | GROUP_INVITE
+  frequencyScore  Int      @default(0) // incremented on each resolved usage
+  lastUsedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  aliases         NameAlias[]
+
+  @@index([ownerUserId, firstName])
+  @@index([ownerUserId, lastUsedAt])
+  // Identity dedup: at most one contact per owner per phone/email. Enforced
+  // as a plain (non-partial) unique index would reject multiple NULLs
+  // incorrectly in some engines, but Postgres treats NULL as distinct in
+  // unique indexes, so this correctly allows many phone-less contacts while
+  // still preventing two contacts with the SAME phone for the same owner —
+  // the exact duplicate-identity bug this schema exists to prevent.
+  @@unique([ownerUserId, normalizedPhone])
+  @@unique([ownerUserId, normalizedEmail])
+}
+
+// Aliases/nicknames/speech-variant spellings that resolve to a Contact,
+// scoped per-owner so "V" can mean different people for different users.
+model NameAlias {
+  id         String   @id @default(cuid())
+  ownerUserId String
+  ownerUser  User     @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  contactId  String
+  contact    Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  alias      String // normalized lowercase, e.g. "van", "vanshika a"
+  source     NameResolutionSource @default(MANUAL_CONFIRMATION)
+  confidence Float    @default(1.0)
+  createdAt  DateTime @default(now())
+
+  @@unique([ownerUserId, alias, contactId])
+  @@index([ownerUserId, alias])
+}
+
+// Records every time the AI resolver had to disambiguate, for learning + audit.
+model NameResolutionLog {
+  id            String   @id @default(cuid())
+  ownerUserId   String
+  groupId       String?
+  rawInput      String // e.g. "Vanshika"
+  candidates    Json // array of {contactId, displayName, score}[]
+  resolvedContactId String?
+  wasAmbiguous  Boolean  @default(false)
+  userConfirmed Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([ownerUserId, createdAt])
+}
+
+// ==========================================================
+// GROUPS
+// ==========================================================
+
+model Group {
+  id          String    @id @default(cuid())
+  name        String
+  type        GroupType @default(CUSTOM)
+  description String?
+  avatarUrl   String?
+  currency    String    @default("INR")
+  createdById String
+  inviteCode  String    @unique @default(cuid())
+  archivedAt  DateTime?
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  members             GroupMember[]
+  expenses            Expense[]
+  settlements         Settlement[]
+  recurringExpenses   RecurringExpense[]
+  templates           ExpenseTemplate[]
+  shoppingLists       ShoppingList[]
+  documents           Document[]
+  activityEvents      ActivityEvent[]
+  notifications       Notification[]
+
+  @@index([createdById])
+  @@index([inviteCode])
+}
+
+model GroupMember {
+  id       String            @id @default(cuid())
+  groupId  String
+  group    Group             @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     GroupRole         @default(MEMBER)
+  status   GroupMemberStatus @default(ACTIVE)
+  nickname String? // per-group display override
+  joinedAt DateTime          @default(now())
+  leftAt   DateTime?
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+}
+
+// ==========================================================
+// EXPENSES
+// ==========================================================
+
+model Expense {
+  id            String        @id @default(cuid())
+  groupId       String
+  group         Group         @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  amount        Decimal       @db.Decimal(14, 2)
+  currency      String        @default("INR")
+  category      String        @default("general")
+  splitMethod   SplitMethod   @default(EQUAL)
+  source        ExpenseSource @default(MANUAL)
+  status        ExpenseStatus @default(ACTIVE)
+  expenseDate   DateTime      @default(now())
+  notes         String?
+  createdById   String
+  createdBy     User          @relation("ExpenseCreator", fields: [createdById], references: [id])
+  recurringExpenseId String?
+  recurringExpense   RecurringExpense? @relation(fields: [recurringExpenseId], references: [id], onDelete: SetNull)
+  recurringOccurrenceDate DateTime? @db.Date // dedup key: one generated expense per calendar occurrence
+  receiptId     String?       @unique
+  receipt       Receipt?      @relation(fields: [receiptId], references: [id], onDelete: SetNull)
+  aiRawInput    String? // original text/voice transcript, if AI-created
+  aiConfidence  Float?
+  deletedAt     DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  payers        ExpensePayer[]
+  participants  ExpenseParticipant[]
+  attachments   Attachment[]
+  comments      Comment[]
+  editHistory   ExpenseEditHistory[]
+  activityEvents ActivityEvent[]
+
+  @@index([groupId, expenseDate])
+  @@index([createdById])
+  @@index([category])
+}
+
+// Supports multi-payer expenses
+model ExpensePayer {
+  id        String  @id @default(cuid())
+  expenseId String
+  expense   Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  amountPaid Decimal @db.Decimal(14, 2)
+
+  @@unique([expenseId, userId])
+  @@index([expenseId])
+  @@index([userId])
+}
+
+// Per-participant computed share, immutable snapshot at creation/edit time
+model ExpenseParticipant {
+  id           String  @id @default(cuid())
+  expenseId    String
+  expense      Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User    @relation(fields: [userId], references: [id])
+  shareAmount  Decimal @db.Decimal(14, 2) // resolved monetary share
+  sharePercent Decimal? @db.Decimal(6, 3) // if PERCENTAGE method
+  shareUnits   Int?    // if SHARES method
+
+  @@unique([expenseId, userId])
+  @@index([expenseId])
+  @@index([userId])
+}
+
+model ExpenseEditHistory {
+  id         String   @id @default(cuid())
+  expenseId  String
+  expense    Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  editedById String
+  diff       Json // structured before/after diff
+  createdAt  DateTime @default(now())
+
+  @@index([expenseId])
+}
+
+// ==========================================================
+// SETTLEMENTS
+// ==========================================================
+
+model Settlement {
+  id          String           @id @default(cuid())
+  groupId     String
+  group       Group            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  fromUserId  String
+  fromUser    User             @relation("SettlementPayer", fields: [fromUserId], references: [id])
+  toUserId    String
+  toUser      User             @relation("SettlementPayee", fields: [toUserId], references: [id])
+  amount      Decimal          @db.Decimal(14, 2)
+  currency    String           @default("INR")
+  method      SettlementMethod @default(CASH)
+  status      SettlementStatus @default(PENDING)
+  note        String?
+  completedAt DateTime?
+  cancelledAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([groupId, status])
+  @@index([fromUserId])
+  @@index([toUserId])
+}
+
+// ==========================================================
+// RECURRING EXPENSES
+// ==========================================================
+
+model RecurringExpense {
+  id             String              @id @default(cuid())
+  groupId        String
+  group          Group               @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  title          String
+  amount         Decimal             @db.Decimal(14, 2)
+  currency       String              @default("INR")
+  category       String              @default("general")
+  splitMethod    SplitMethod         @default(EQUAL)
+  payerConfig    Json // [{userId, amount}]
+  participantConfig Json // [{userId, shareAmount|sharePercent|shareUnits}]
+  frequency      RecurringFrequency  @default(MONTHLY)
+  customIntervalDays Int?
+  startDate      DateTime
+  endDate        DateTime?
+  nextOccurrence DateTime
+  lastGeneratedAt DateTime?
+  isActive       Boolean             @default(true)
+  createdById    String
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  generatedExpenses Expense[]
+
+  @@index([groupId, isActive])
+  @@index([nextOccurrence, isActive])
+}
+
+// ==========================================================
+// TEMPLATES
+// ==========================================================
+
+model ExpenseTemplate {
+  id            String      @id @default(cuid())
+  groupId       String?
+  group         Group?      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  ownerId       String
+  owner         User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name          String
+  title         String
+  defaultAmount Decimal?    @db.Decimal(14, 2)
+  category      String      @default("general")
+  splitMethod   SplitMethod @default(EQUAL)
+  participantConfig Json?
+  icon          String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([ownerId])
+  @@index([groupId])
+}
+
+// ==========================================================
+// RECEIPTS / ATTACHMENTS / DOCUMENTS
+// ==========================================================
+
+model Receipt {
+  id              String   @id @default(cuid())
+  imageUrl        String
+  ocrRawText      String?
+  merchantName    String?
+  detectedAmount  Decimal? @db.Decimal(14, 2)
+  detectedDate    DateTime?
+  detectedCategory String?
+  confidence      Float?
+  processedAt     DateTime?
+  createdAt       DateTime @default(now())
+
+  expense         Expense?
+
+  @@index([createdAt])
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  expenseId String
+  expense   Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  fileUrl   String
+  fileName  String
+  mimeType  String
+  sizeBytes Int
+  createdAt DateTime @default(now())
+
+  @@index([expenseId])
+}
+
+model Document {
+  id          String   @id @default(cuid())
+  groupId     String
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  uploadedById String
+  uploadedBy  User     @relation(fields: [uploadedById], references: [id])
+  fileName    String
+  fileUrl     String
+  mimeType    String
+  sizeBytes   Int
+  category    String?  // bill, invoice, ticket, booking, receipt, other
+  createdAt   DateTime @default(now())
+  deletedAt   DateTime?
+
+  @@index([groupId])
+}
+
+// ==========================================================
+// COMMENTS
+// ==========================================================
+
+model Comment {
+  id        String   @id @default(cuid())
+  expenseId String
+  expense   Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  body      String
+  createdAt DateTime @default(now())
+  editedAt  DateTime?
+  deletedAt DateTime?
+
+  @@index([expenseId])
+}
+
+// ==========================================================
+// SHOPPING LISTS
+// ==========================================================
+
+model ShoppingList {
+  id        String   @id @default(cuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name      String   @default("Shopping List")
+  createdAt DateTime @default(now())
+  archivedAt DateTime?
+
+  items     ShoppingItem[]
+
+  @@index([groupId])
+}
+
+model ShoppingItem {
+  id             String       @id @default(cuid())
+  listId         String
+  list           ShoppingList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  name           String
+  quantity       String?
+  estimatedPrice Decimal?     @db.Decimal(14, 2)
+  assignedToId   String?
+  assignedTo     User?        @relation("ShoppingItemAssignee", fields: [assignedToId], references: [id])
+  addedById      String
+  addedBy        User         @relation("ShoppingItemAddedBy", fields: [addedById], references: [id])
+  isCompleted    Boolean      @default(false)
+  completedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([listId])
+}
+
+// ==========================================================
+// NOTIFICATIONS
+// ==========================================================
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId   String?
+  group     Group?           @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  data      Json? // e.g. {expenseId, settlementId}
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  deliveries NotificationDelivery[]
+
+  @@index([userId, readAt])
+  @@index([groupId])
+}
+
+model NotificationPreference {
+  id        String            @id @default(cuid())
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  channel   NotificationChannel
+  enabled   Boolean           @default(true)
+
+  @@unique([userId, type, channel])
+  @@index([userId])
+}
+
+model NotificationDevice {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expoPushToken String @unique
+  platform   String // ios | android
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model NotificationDelivery {
+  id             String                     @id @default(cuid())
+  notificationId String
+  notification   Notification               @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  channel        NotificationChannel
+  status         NotificationDeliveryStatus @default(PENDING)
+  providerRef    String? // external message id
+  error          String?
+  attemptedAt    DateTime                   @default(now())
+  deliveredAt    DateTime?
+
+  @@index([notificationId])
+}
+
+// ==========================================================
+// ACTIVITY / AUDIT
+// ==========================================================
+
+model ActivityEvent {
+  id        String   @id @default(cuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  actorId   String
+  actor     User     @relation(fields: [actorId], references: [id])
+  expenseId String?
+  expense   Expense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  type      String // e.g. "expense_added", "member_joined"
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([groupId, createdAt])
+}
+
+model AuditRecord {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action    String
+  entityType String
+  entityId  String
+  metadata  Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+}

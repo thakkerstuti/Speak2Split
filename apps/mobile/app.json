@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "Speak2Split",
+    "slug": "speak2split",
+    "scheme": "speak2split",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "plugins": ["expo-router", "expo-apple-authentication"],
+    "ios": { "supportsTablet": true, "bundleIdentifier": "com.speak2split.app", "usesAppleSignIn": true },
+    "android": { "package": "com.speak2split.app" }
+  }
+}
