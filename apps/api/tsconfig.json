@@ -10,7 +10,7 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "baseUrl": ".",
-    "paths": { "@speak2split/shared": ["../../packages/shared/src"] }
+    "rootDir": "../.."
   },
   "include": ["src"]
 }
