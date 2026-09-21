@@ -18,8 +18,7 @@
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write .",
     "test": "npm run test --workspace=@speak2split/api",
-    "test:e2e": "npm run test:e2e --workspace=@speak2split/api",
-    "prepare": "husky install"
+    "test:e2e": "npm run test:e2e --workspace=@speak2split/api"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.18.0",
