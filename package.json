@@ -10,15 +10,15 @@
   "scripts": {
     "dev:api": "yarn workspace @speak2split/api start:dev",
     "dev:mobile": "yarn workspace @speak2split/mobile start",
-    "build": "yarn workspace @speak2split/api build",
+    "build": "npm run build --workspace=@speak2split/api",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema=prisma/schema.prisma",
     "prisma:studio": "prisma studio --schema=prisma/schema.prisma",
     "prisma:seed": "ts-node prisma/seed.ts",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write .",
-    "test": "yarn workspace @speak2split/api test",
-    "test:e2e": "yarn workspace @speak2split/api test:e2e",
+    "test": "npm run test --workspace=@speak2split/api",
+    "test:e2e": "npm run test:e2e --workspace=@speak2split/api",
     "prepare": "husky install"
   },
   "devDependencies": {
