@@ -52,7 +52,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 const httpServer = createServer(app);
 initRealtime(httpServer);
 
-const port = Number(process.env.API_PORT) || 3000;
+const port = Number(process.env.PORT || process.env.API_PORT) || 3000;
 
 // Connect to MongoDB before accepting any traffic — failing fast and
 // loudly here is much better than accepting requests that will all fail

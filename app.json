@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "418dee9c-524d-46c8-bb41-35170821e7a9"
+      }
+    },
+    "android": {
+      "package": "com.stuti19.speak2split"
+    },
+    "owner": "stuti20"
+  }
+}

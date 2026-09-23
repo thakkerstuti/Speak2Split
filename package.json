@@ -3,13 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "description": "Say it. Split it. Settle it. Context-aware shared expense management.",
+  "main": "expo-router/entry",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "dev:api": "yarn workspace @speak2split/api start:dev",
-    "dev:mobile": "yarn workspace @speak2split/mobile start",
+    "dev:api": "npm run start:dev --workspace=@speak2split/api",
+    "dev:mobile": "npm run start --workspace=@speak2split/mobile",
     "build": "npm run build --workspace=@speak2split/shared && npm run build --workspace=@speak2split/api",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema=prisma/schema.prisma",
@@ -30,7 +31,7 @@
     "prettier": "^3.3.3",
     "prisma": "^5.18.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.5.4"
+    "typescript": "5.3.3"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
