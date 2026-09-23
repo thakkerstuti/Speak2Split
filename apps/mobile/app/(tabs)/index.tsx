@@ -1,7 +1,7 @@
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, TextInput } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { Search, Bell, ShoppingCart, Wifi, Receipt } from "lucide-react-native";
+import { Search, Bell, ShoppingCart, Wifi, Receipt, ChevronRight } from "lucide-react-native";
 import { groupsApi, settlementsApi, expensesApi } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { colors, spacing, radius, typography, fonts } from "../../lib/theme";
@@ -39,7 +39,7 @@ export default function DashboardScreen() {
       return all
         .flat()
         .sort((a, b) => new Date(b.expenseDate).getTime() - new Date(a.expenseDate).getTime())
-        .slice(0, 4);
+        .slice(0, 5);
     },
     enabled: !!groupsQuery.data,
   });
@@ -47,7 +47,7 @@ export default function DashboardScreen() {
   const pendingSettlement = useMemo(() => {
     if (!balancesQuery.data || !user) return null;
     for (const g of balancesQuery.data) {
-      const owedToMe = g.suggestedSettlements.find((s: any) => s.toUserId === user.id);
+      const owedToMe = g.suggestedSettlements?.find((s: any) => s.toUserId === user.id);
       if (owedToMe) return { ...owedToMe, groupName: g.group.name, groupId: g.group.id };
     }
     return null;
@@ -59,46 +59,66 @@ export default function DashboardScreen() {
     setRefreshing(false);
   };
 
+  const displayName = user?.displayName?.split(" ")[0] || "Friend";
+
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={{ paddingBottom: spacing.xxl }}
+      contentContainerStyle={{ paddingBottom: spacing.xxl + 40 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
     >
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.hi}>Hi {user?.displayName?.split(" ")[0] ?? ""} 👋</Text>
-          <Text style={styles.subGreeting}>Control your expenses here.</Text>
-        </View>
+      {/* Top Header Row with Logo & Avatar */}
+      <View style={styles.topHeader}>
+        <Text style={styles.brandTitle}>Speak2Split</Text>
         <View style={styles.headerIcons}>
           <Pressable style={styles.iconCircle} onPress={() => router.push("/(tabs)/notifications")}>
             <Bell color={colors.textPrimary} size={19} />
           </Pressable>
           <View style={styles.avatarCircle}>
-            <Text style={styles.avatarText}>{user?.displayName?.slice(0, 1).toUpperCase()}</Text>
+            <Text style={styles.avatarText}>{displayName.slice(0, 1).toUpperCase()}</Text>
           </View>
         </View>
       </View>
 
+      {/* Greeting Title */}
+      <View style={styles.greetingSection}>
+        <Text style={styles.hi}>Hi {displayName}! 👋</Text>
+        <Text style={styles.subGreeting}>Control your expenses here.</Text>
+      </View>
+
+      {/* Search Bar */}
       <Pressable style={styles.searchBar} onPress={() => router.push("/(tabs)/search")}>
         <Search color={colors.textMuted} size={18} />
         <Text style={styles.searchPlaceholder}>Search group or expenses</Text>
       </Pressable>
 
-      {pendingSettlement && (
+      {/* Recent Updates Banner */}
+      {pendingSettlement ? (
         <View style={styles.updateCard}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.updateTitle}>{pendingSettlement.fromDisplayName} owes you</Text>
+            <Text style={styles.updateCardTag}>Recent Updates</Text>
+            <Text style={styles.updateTitle}>{pendingSettlement.fromDisplayName} Made a Payment!</Text>
             <Text style={styles.updateSubtitle}>
-              Review and settle — ₹{pendingSettlement.amount.toFixed(0)} in {pendingSettlement.groupName}
+              Review and settle — ₹{pendingSettlement.amount.toFixed(0)}
             </Text>
           </View>
           <Pressable style={styles.settleButton} onPress={() => router.push(`/(tabs)/groups/${pendingSettlement.groupId}`)}>
             <Text style={styles.settleButtonText}>Settle Now</Text>
           </Pressable>
         </View>
+      ) : (
+        <View style={styles.updateCardDemo}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.updateTitle}>Group Balances Updated</Text>
+            <Text style={styles.updateSubtitle}>All balances are up to date.</Text>
+          </View>
+          <Pressable style={styles.settleButton} onPress={() => router.push("/(tabs)/groups")}>
+            <Text style={styles.settleButtonText}>View</Text>
+          </Pressable>
+        </View>
       )}
 
+      {/* My Groups Section */}
       <View style={styles.sectionHeaderRow}>
         <Text style={styles.sectionTitle}>My Groups</Text>
         <Pressable onPress={() => router.push("/(tabs)/groups")}>
@@ -106,48 +126,58 @@ export default function DashboardScreen() {
         </Pressable>
       </View>
 
-      {groupsQuery.data?.length === 0 && (
+      {groupsQuery.data?.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>No groups yet</Text>
           <Text style={styles.muted}>Create one to start splitting expenses.</Text>
         </View>
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingLeft: spacing.lg, paddingRight: spacing.md, gap: spacing.md }}>
+          {groupsQuery.data?.map((group, idx) => {
+            const isPrimaryCard = idx === 0;
+            const groupBalance = balancesQuery.data?.find((b) => b.group.id === group.id);
+            const total = groupBalance?.balances?.reduce((s: number, b: any) => s + b.totalPaid, 0) ?? 0;
+            return (
+              <Pressable
+                key={group.id}
+                style={[styles.groupCard, isPrimaryCard ? styles.groupCardActive : styles.groupCardInactive]}
+                onPress={() => router.push(`/(tabs)/groups/${group.id}`)}
+              >
+                <Text style={[styles.groupCardTitle, isPrimaryCard ? styles.textWhite : styles.textDark]} numberOfLines={1}>
+                  {group.name}
+                </Text>
+                <Text style={[styles.groupCardSubtitle, isPrimaryCard ? styles.textWhiteMuted : styles.textGray]}>
+                  Total Expenses: ₹{total.toFixed(0)}
+                </Text>
+
+                <View style={styles.groupCardFooter}>
+                  <View style={styles.avatarStack}>
+                    {(groupBalance?.balances ?? [{ displayName: "User" }, { displayName: "Friend" }]).slice(0, 3).map((b: any, i: number) => (
+                      <View key={i} style={[styles.stackAvatar, { marginLeft: i === 0 ? 0 : -8, zIndex: 10 - i }]}>
+                        <Text style={styles.stackAvatarText}>{b.displayName?.slice(0, 1).toUpperCase()}</Text>
+                      </View>
+                    ))}
+                    <View style={[styles.stackAvatar, styles.stackAvatarMore, { marginLeft: -8 }]}>
+                      <Text style={styles.stackAvatarMoreText}>+4</Text>
+                    </View>
+                  </View>
+
+                  <Pressable
+                    style={[styles.addExpensesBtn, isPrimaryCard ? styles.addExpensesBtnWhite : styles.addExpensesBtnBlue]}
+                    onPress={() => router.push({ pathname: "/(tabs)/add-expense", params: { groupId: group.id } })}
+                  >
+                    <Text style={[styles.addExpensesBtnText, isPrimaryCard ? { color: colors.primary } : { color: colors.primary }]}>
+                      Add Expenses
+                    </Text>
+                  </Pressable>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       )}
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingLeft: spacing.lg, gap: spacing.md }}>
-        {groupsQuery.data?.map((group, idx) => {
-          const groupBalance = balancesQuery.data?.find((b) => b.group.id === group.id);
-          const total = groupBalance?.balances.reduce((s: number, b: any) => s + b.totalPaid, 0) ?? 0;
-          return (
-            <Pressable key={group.id} style={styles.groupCard} onPress={() => router.push(`/(tabs)/groups/${group.id}`)}>
-              <View style={[styles.groupCardHeader, { backgroundColor: idx % 2 === 0 ? colors.primary : colors.textPrimary }]}>
-                <Text style={styles.groupCardTitle} numberOfLines={1}>{group.name}</Text>
-                <Text style={styles.groupCardSubtitle}>Total Expenses: ₹{total.toFixed(0)}</Text>
-              </View>
-              <View style={styles.groupCardBody}>
-                <View style={styles.avatarStack}>
-                  {(groupBalance?.balances ?? []).slice(0, 3).map((b: any, i: number) => (
-                    <View key={b.userId} style={[styles.stackAvatar, { marginLeft: i === 0 ? 0 : -10, zIndex: 10 - i }]}>
-                      <Text style={styles.stackAvatarText}>{b.displayName?.slice(0, 1).toUpperCase()}</Text>
-                    </View>
-                  ))}
-                  {(groupBalance?.balances?.length ?? 0) > 3 && (
-                    <View style={[styles.stackAvatar, styles.stackAvatarMore, { marginLeft: -10 }]}>
-                      <Text style={styles.stackAvatarMoreText}>+{(groupBalance!.balances.length - 3)}</Text>
-                    </View>
-                  )}
-                </View>
-                <Pressable
-                  style={styles.addExpenseButton}
-                  onPress={() => router.push({ pathname: "/(tabs)/add-expense", params: { groupId: group.id } })}
-                >
-                  <Text style={styles.addExpenseButtonText}>Add Expenses</Text>
-                </Pressable>
-              </View>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
+      {/* Recent Expenses Section */}
       <View style={styles.sectionHeaderRow}>
         <Text style={styles.sectionTitle}>Recent Expenses</Text>
         <Pressable onPress={() => router.push("/(tabs)/search")}>
@@ -155,22 +185,25 @@ export default function DashboardScreen() {
         </Pressable>
       </View>
 
-      <View style={{ paddingHorizontal: spacing.lg }}>
-        {recentExpensesQuery.data?.length === 0 && <Text style={styles.muted}>No expenses yet.</Text>}
-        {recentExpensesQuery.data?.map((e: any) => {
+      <View style={styles.expenseListCard}>
+        {recentExpensesQuery.data?.length === 0 && (
+          <Text style={styles.muted}>No expenses logged yet.</Text>
+        )}
+        {recentExpensesQuery.data?.map((e: any, index: number) => {
           const Icon = CATEGORY_ICON[e.category] ?? Receipt;
+          const isLast = index === (recentExpensesQuery.data?.length ?? 0) - 1;
           return (
-            <View key={e.id} style={styles.expenseRow}>
-              <View style={styles.expenseIconWrap}>
-                <Icon color={colors.textSecondary} size={18} />
+            <View key={e.id} style={[styles.expenseItem, !isLast && styles.expenseItemBorder]}>
+              <View style={styles.expenseIconBadge}>
+                <Icon color={colors.textPrimary} size={18} strokeWidth={2} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.expenseTitle}>{e.title}</Text>
-                <Text style={styles.muted}>
-                  {new Date(e.expenseDate).toLocaleDateString(undefined, { day: "numeric", month: "short" })} · {e.groupName}
+                <Text style={styles.expenseItemTitle}>{e.title}</Text>
+                <Text style={styles.expenseItemMeta}>
+                  {new Date(e.expenseDate).toLocaleDateString(undefined, { day: "numeric", month: "short" })} · Paid by {e.paidByDisplayName || "Member"}
                 </Text>
               </View>
-              <Text style={styles.expenseAmount}>-₹{Number(e.amount).toFixed(0)}</Text>
+              <Text style={styles.expenseItemAmount}>-₹{Number(e.amount).toFixed(2)}</Text>
             </View>
           );
         })}
@@ -181,40 +214,155 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingHorizontal: spacing.lg, paddingTop: spacing.xxl },
-  hi: { ...typography.title, fontSize: 22, color: colors.textPrimary },
-  subGreeting: { ...typography.body, fontSize: 14, color: colors.textSecondary, marginTop: 2 },
+  topHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl + 10,
+  },
+  brandTitle: {
+    fontFamily: fonts.extrabold,
+    fontSize: 22,
+    color: colors.primary,
+    letterSpacing: -0.5,
+  },
   headerIcons: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  iconCircle: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.bgElevated, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
-  avatarCircle: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.primaryMuted, alignItems: "center", justifyContent: "center" },
+  iconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: colors.card,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  avatarCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primaryMuted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   avatarText: { color: colors.primary, fontFamily: fonts.bold, fontSize: 16 },
-  searchBar: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: colors.bgElevated, borderRadius: radius.md, marginHorizontal: spacing.lg, marginTop: spacing.lg, paddingHorizontal: spacing.md, paddingVertical: 13, borderWidth: 1, borderColor: colors.border },
-  searchPlaceholder: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 15 },
-  updateCard: { flexDirection: "row", alignItems: "center", backgroundColor: colors.primaryMuted, borderRadius: radius.lg, marginHorizontal: spacing.lg, marginTop: spacing.lg, padding: spacing.md },
+  greetingSection: { paddingHorizontal: spacing.lg, marginTop: spacing.md },
+  hi: { ...typography.display, fontSize: 24, color: colors.textPrimary },
+  subGreeting: { ...typography.bodyRegular, color: colors.textSecondary, marginTop: 2 },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: "#F1F5F9",
+    borderRadius: radius.pill,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+  },
+  searchPlaceholder: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 15 },
+  updateCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.primaryMuted,
+    borderRadius: 20,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    padding: spacing.md,
+  },
+  updateCardDemo: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.primaryMuted,
+    borderRadius: 20,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    padding: spacing.md,
+  },
+  updateCardTag: { color: colors.primary, fontFamily: fonts.bold, fontSize: 11, textTransform: "uppercase", marginBottom: 2 },
   updateTitle: { color: colors.textPrimary, fontFamily: fonts.bold, fontSize: 15 },
-  updateSubtitle: { color: colors.textSecondary, fontFamily: fonts.medium, fontSize: 12, marginTop: 2 },
-  settleButton: { backgroundColor: colors.warning, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  settleButtonText: { color: colors.onDark, fontFamily: fonts.bold, fontSize: 12 },
-  sectionHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, marginTop: spacing.xl, marginBottom: spacing.md },
-  sectionTitle: { ...typography.title, fontSize: 17, color: colors.textPrimary },
-  viewAll: { color: colors.primary, fontFamily: fonts.semibold, fontSize: 13 },
-  muted: { color: colors.textMuted, fontSize: 13, fontFamily: fonts.regular },
-  emptyState: { marginHorizontal: spacing.lg, padding: spacing.lg, backgroundColor: colors.bgElevated, borderRadius: radius.md, alignItems: "center", gap: spacing.xs },
+  updateSubtitle: { color: colors.textSecondary, fontFamily: fonts.medium, fontSize: 13, marginTop: 2 },
+  settleButton: { backgroundColor: colors.warning, borderRadius: radius.pill, paddingHorizontal: 16, paddingVertical: 10 },
+  settleButtonText: { color: colors.onDark, fontFamily: fonts.bold, fontSize: 13 },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.xl,
+    marginBottom: spacing.md,
+  },
+  sectionTitle: { ...typography.title, fontSize: 18, color: colors.textPrimary },
+  viewAll: { color: colors.primary, fontFamily: fonts.semibold, fontSize: 14 },
+  muted: { color: colors.textMuted, fontSize: 14, fontFamily: fonts.regular },
+  emptyState: {
+    marginHorizontal: spacing.lg,
+    padding: spacing.lg,
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    alignItems: "center",
+    gap: spacing.xs,
+  },
   emptyTitle: { color: colors.textPrimary, fontFamily: fonts.bold },
-  groupCard: { width: 180, borderRadius: radius.lg, backgroundColor: colors.bgElevated, overflow: "hidden", marginRight: spacing.xs, shadowColor: "#0F172A", shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
-  groupCardHeader: { padding: spacing.md, height: 74, justifyContent: "center" },
-  groupCardTitle: { color: colors.onDark, fontFamily: fonts.bold, fontSize: 14 },
-  groupCardSubtitle: { color: "#FFFFFFCC", fontFamily: fonts.medium, fontSize: 11, marginTop: 4 },
-  groupCardBody: { padding: spacing.sm, gap: spacing.sm },
+  groupCard: {
+    width: 210,
+    borderRadius: 22,
+    padding: spacing.md,
+    justifyContent: "space-between",
+    minHeight: 140,
+    shadowColor: colors.textPrimary,
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  groupCardActive: { backgroundColor: colors.primary },
+  groupCardInactive: { backgroundColor: "#F1F5F9", borderWidth: 1, borderColor: colors.border },
+  groupCardTitle: { fontFamily: fonts.bold, fontSize: 16 },
+  groupCardSubtitle: { fontFamily: fonts.medium, fontSize: 12, marginTop: 4 },
+  textWhite: { color: colors.onDark },
+  textWhiteMuted: { color: "#FFFFFFCC" },
+  textDark: { color: colors.textPrimary },
+  textGray: { color: colors.textSecondary },
+  groupCardFooter: { gap: spacing.sm, marginTop: spacing.md },
   avatarStack: { flexDirection: "row", alignItems: "center" },
-  stackAvatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: colors.primaryMuted, borderWidth: 2, borderColor: colors.bgElevated, alignItems: "center", justifyContent: "center" },
-  stackAvatarText: { color: colors.primary, fontSize: 10, fontFamily: fonts.bold },
+  stackAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primaryMuted,
+    borderWidth: 2,
+    borderColor: colors.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stackAvatarText: { color: colors.primary, fontSize: 11, fontFamily: fonts.bold },
   stackAvatarMore: { backgroundColor: colors.textMuted },
-  stackAvatarMoreText: { color: colors.onDark, fontSize: 9, fontFamily: fonts.bold },
-  addExpenseButton: { backgroundColor: colors.primaryMuted, borderRadius: radius.pill, paddingVertical: 8, alignItems: "center" },
-  addExpenseButtonText: { color: colors.primary, fontFamily: fonts.bold, fontSize: 12 },
-  expenseRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
-  expenseIconWrap: { width: 40, height: 40, borderRadius: radius.sm, backgroundColor: colors.bgElevated, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
-  expenseTitle: { color: colors.textPrimary, fontFamily: fonts.semibold, fontSize: 15 },
-  expenseAmount: { color: colors.negative, fontFamily: fonts.bold, fontSize: 14 },
+  stackAvatarMoreText: { color: colors.onDark, fontSize: 10, fontFamily: fonts.bold },
+  addExpensesBtn: { borderRadius: radius.pill, paddingVertical: 10, alignItems: "center" },
+  addExpensesBtnWhite: { backgroundColor: colors.card },
+  addExpensesBtnBlue: { backgroundColor: colors.primaryMuted },
+  addExpensesBtnText: { fontFamily: fonts.bold, fontSize: 13 },
+  expenseListCard: {
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.card,
+    borderRadius: 20,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  expenseItem: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.sm + 2 },
+  expenseItemBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  expenseIconBadge: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  expenseItemTitle: { color: colors.textPrimary, fontFamily: fonts.bold, fontSize: 15 },
+  expenseItemMeta: { color: colors.textSecondary, fontFamily: fonts.medium, fontSize: 12, marginTop: 2 },
+  expenseItemAmount: { color: colors.textPrimary, fontFamily: fonts.bold, fontSize: 15 },
 });

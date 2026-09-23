@@ -1,26 +1,31 @@
 /**
- * Speak2Split design tokens — light, warm, friendly fintech-app style
- * (matching the reference design: white surfaces, a confident blue
- * primary, soft tinted cards, generous rounding).
+ * Speak2Split design tokens — matching the Splitzy mockup style:
+ * Clean white surfaces, vibrant primary blue (#2563EB), soft sky blue tints (#E0F2FE),
+ * pill-shaped buttons, capsule tags, and Plus Jakarta Sans geometric typography.
  */
 export const colors = {
-  bg: "#F6F8FC",
+  bg: "#F8FAFC",
   bgElevated: "#FFFFFF",
   card: "#FFFFFF",
-  cardTinted: "#EFF5FF",
-  border: "#EAEEF5",
+  cardTinted: "#F1F5F9",
+  cardBlue: "#2563EB",
+  border: "#E2E8F0",
   textPrimary: "#0F172A",
   textSecondary: "#64748B",
   textMuted: "#94A3B8",
-  primary: "#2F6FED",
-  primaryDark: "#1E4FC4",
-  primaryMuted: "#E4EDFF",
-  accent: "#2F6FED", // kept as an alias so existing screens using `accent` still work
-  accentMuted: "#E4EDFF",
-  positive: "#1BB980",
-  negative: "#F04452",
-  warning: "#F5A623",
+  primary: "#2563EB",
+  primaryDark: "#1D4ED8",
+  primaryMuted: "#E0F2FE",
+  primaryLight: "#EFF6FF",
+  accent: "#2563EB",
+  accentMuted: "#E0F2FE",
+  positive: "#10B981",
+  negative: "#EF4444",
+  warning: "#F59E0B",
+  purple: "#8B5CF6",
+  orange: "#F97316",
   onDark: "#FFFFFF",
+  pillBg: "#E0F2FE",
 };
 
 export const spacing = {
@@ -33,17 +38,13 @@ export const spacing = {
 };
 
 export const radius = {
-  sm: 10,
-  md: 16,
+  sm: 12,
+  md: 18,
   lg: 24,
+  xl: 30,
   pill: 999,
 };
 
-/**
- * Font family names, registered via useFonts() in the root layout using
- * @expo-google-fonts/plus-jakarta-sans. Falls back to the system font
- * automatically until the fonts finish loading (see _layout.tsx).
- */
 export const fonts = {
   regular: "PlusJakartaSans_400Regular",
   medium: "PlusJakartaSans_500Medium",
@@ -53,10 +54,11 @@ export const fonts = {
 };
 
 export const typography = {
-  display: { fontSize: 30, fontFamily: fonts.extrabold, letterSpacing: -0.5 },
+  display: { fontSize: 28, fontFamily: fonts.extrabold, letterSpacing: -0.5 },
   title: { fontSize: 20, fontFamily: fonts.bold, letterSpacing: -0.3 },
-  body: { fontSize: 16, fontFamily: fonts.regular },
-  bodyMedium: { fontSize: 15, fontFamily: fonts.medium },
+  heading: { fontSize: 18, fontFamily: fonts.bold },
+  body: { fontSize: 15, fontFamily: fonts.medium },
+  bodyRegular: { fontSize: 14, fontFamily: fonts.regular },
   caption: { fontSize: 13, fontFamily: fonts.medium },
   label: { fontSize: 12, fontFamily: fonts.semibold, letterSpacing: 0.4 },
 };

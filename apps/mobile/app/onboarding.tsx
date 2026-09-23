@@ -1,27 +1,22 @@
 import { useRef, useState } from "react";
 import { View, Text, StyleSheet, Dimensions, ScrollView, Pressable } from "react-native";
 import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
-import { Wallet, Mic, CalendarCheck, Users2, Sparkles, HandCoins } from "lucide-react-native";
+import { Home, DollarSign, CalendarCheck, BarChart3, Wallet, Users, Mic, Sparkles, HandCoins } from "lucide-react-native";
 import { useAuthStore } from "../store/auth-store";
 import { colors, spacing, radius, typography, fonts } from "../lib/theme";
 
-const ONBOARDING_KEY = "speak2split_has_onboarded";
 const { width } = Dimensions.get("window");
 
 const SLIDES = [
   {
-    icons: [Wallet, Users2, CalendarCheck],
-    title: "Split Money Made\nSimple for Everyone",
-    subtitle: "Whether it's rent, groceries, or a weekend trip — keep everyone on the same page. Add, split, and settle with just a tap.",
+    title: "Split Money Made\nSimple for Roommates",
+    subtitle: "Whether it's rent, groceries, or weekend plans, keep everyone on the same page. Add, split, and settle with just a tap.",
   },
   {
-    icons: [Mic, Sparkles, HandCoins],
     title: "Just Say the\nExpense Out Loud",
     subtitle: '"I paid 2400 for electricity" — Speak2Split understands the amount, who paid, and who\'s splitting it. No typing needed.',
   },
   {
-    icons: [HandCoins, Users2, Wallet],
     title: "See Balances,\nSettle Instantly",
     subtitle: "Always know who owes what. Settle up in one tap, and everyone in the group sees it update in real time.",
   },
@@ -55,11 +50,11 @@ export default function OnboardingScreen() {
     <View style={styles.container}>
       <View style={styles.skipRow}>
         {index < SLIDES.length - 1 ? (
-          <Pressable onPress={finish} hitSlop={12}>
+          <Pressable style={styles.skipPill} onPress={finish} hitSlop={12}>
             <Text style={styles.skipText}>Skip</Text>
           </Pressable>
         ) : (
-          <View style={{ height: 20 }} />
+          <View style={{ height: 36 }} />
         )}
       </View>
 
@@ -74,28 +69,27 @@ export default function OnboardingScreen() {
         {SLIDES.map((slide, i) => (
           <View key={i} style={[styles.slide, { width }]}>
             <View style={styles.illustrationWrap}>
-              <View style={styles.illustrationCircleOuter}>
-                <View style={styles.illustrationCircleInner}>
-                  {slide.icons[1] && (
-                    <View style={styles.iconBadgeCenter}>
-                      {(() => {
-                        const CenterIcon = slide.icons[1];
-                        return <CenterIcon color={colors.primary} size={40} strokeWidth={1.8} />;
-                      })()}
-                    </View>
-                  )}
+              {/* Dotted Orbit Line */}
+              <View style={styles.orbitCircle}>
+                <View style={styles.centerHouseCard}>
+                  <Home color={colors.primary} size={42} strokeWidth={2} />
+                  <View style={styles.avatarRow}>
+                    <Users color={colors.primary} size={20} />
+                  </View>
                 </View>
-                <View style={[styles.iconBadgeFloating, { top: 12, left: 4 }]}>
-                  {(() => {
-                    const Icon = slide.icons[0];
-                    return <Icon color={colors.onDark} size={20} />;
-                  })()}
+
+                {/* Floating Badges (matching mockup) */}
+                <View style={[styles.floatingBadge, { top: 6, left: 18, backgroundColor: colors.primary }]}>
+                  <DollarSign color={colors.onDark} size={18} strokeWidth={2.5} />
                 </View>
-                <View style={[styles.iconBadgeFloating, styles.iconBadgeFloatingAlt, { bottom: 18, right: 0 }]}>
-                  {(() => {
-                    const Icon = slide.icons[2];
-                    return <Icon color={colors.onDark} size={20} />;
-                  })()}
+                <View style={[styles.floatingBadge, { top: 6, right: 18, backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: colors.border }]}>
+                  <CalendarCheck color={colors.primary} size={18} strokeWidth={2} />
+                </View>
+                <View style={[styles.floatingBadge, { bottom: 20, right: 10, backgroundColor: colors.primary }]}>
+                  <BarChart3 color={colors.onDark} size={18} strokeWidth={2} />
+                </View>
+                <View style={[styles.floatingBadge, { bottom: 20, left: 10, backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: colors.border }]}>
+                  <Wallet color={colors.primary} size={18} strokeWidth={2} />
                 </View>
               </View>
             </View>
@@ -113,7 +107,7 @@ export default function OnboardingScreen() {
           ))}
         </View>
 
-        <Pressable style={styles.nextButton} onPress={next}>
+        <Pressable style={({ pressed }) => [styles.nextButton, pressed && { opacity: 0.9 }]} onPress={next}>
           <Text style={styles.nextButtonText}>{index === SLIDES.length - 1 ? "Get Started" : "Next"}</Text>
         </Pressable>
       </View>
@@ -123,53 +117,63 @@ export default function OnboardingScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  skipRow: { flexDirection: "row", justifyContent: "flex-end", paddingHorizontal: spacing.lg, paddingTop: spacing.xl },
-  skipText: { color: colors.textSecondary, fontFamily: fonts.semibold, fontSize: 14 },
-  slide: { flex: 1, paddingHorizontal: spacing.xl, alignItems: "center", paddingTop: spacing.lg },
-  illustrationWrap: { width: 260, height: 260, alignItems: "center", justifyContent: "center", marginBottom: spacing.xl },
-  illustrationCircleOuter: {
-    width: 240,
-    height: 240,
-    borderRadius: 120,
+  skipRow: { flexDirection: "row", justifyContent: "flex-end", paddingHorizontal: spacing.lg, paddingTop: spacing.xl + 10 },
+  skipPill: {
     backgroundColor: colors.primaryMuted,
-    alignItems: "center",
-    justifyContent: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
   },
-  illustrationCircleInner: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: colors.bgElevated,
+  skipText: { color: colors.primary, fontFamily: fonts.bold, fontSize: 14 },
+  slide: { flex: 1, paddingHorizontal: spacing.xl, alignItems: "center", paddingTop: spacing.md },
+  illustrationWrap: { width: 280, height: 280, alignItems: "center", justifyContent: "center", marginBottom: spacing.xl },
+  orbitCircle: {
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    borderWidth: 2,
+    borderColor: "#93C5FD",
+    borderStyle: "dashed",
     alignItems: "center",
     justifyContent: "center",
+    position: "relative",
+  },
+  centerHouseCard: {
+    width: 140,
+    height: 140,
+    borderRadius: 24,
+    backgroundColor: colors.card,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#3B82F6",
     shadowColor: colors.primary,
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.15,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
+    elevation: 5,
+    gap: 8,
   },
-  iconBadgeCenter: { alignItems: "center", justifyContent: "center" },
-  iconBadgeFloating: {
+  avatarRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  floatingBadge: {
     position: "absolute",
     width: 44,
     height: 44,
-    borderRadius: 14,
-    backgroundColor: colors.primary,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: colors.primary,
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
+    elevation: 4,
   },
-  iconBadgeFloatingAlt: { backgroundColor: colors.warning, shadowColor: colors.warning },
   title: { ...typography.display, fontSize: 26, color: colors.textPrimary, textAlign: "center", lineHeight: 34 },
-  subtitle: { ...typography.body, color: colors.textSecondary, textAlign: "center", marginTop: spacing.md, lineHeight: 22, paddingHorizontal: spacing.sm },
-  footer: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xl, paddingTop: spacing.md },
-  dotsRow: { flexDirection: "row", justifyContent: "center", gap: 6, marginBottom: spacing.lg },
+  subtitle: { ...typography.bodyRegular, color: colors.textSecondary, textAlign: "center", marginTop: spacing.md, lineHeight: 22, paddingHorizontal: spacing.xs },
+  footer: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xl + 10, paddingTop: spacing.md },
+  dotsRow: { flexDirection: "row", justifyContent: "center", gap: 8, marginBottom: spacing.xl },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
-  dotActive: { width: 22, backgroundColor: colors.primary },
-  nextButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 17, alignItems: "center" },
+  dotActive: { width: 24, borderRadius: 4, backgroundColor: colors.primary },
+  nextButton: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingVertical: 17, alignItems: "center" },
   nextButtonText: { color: colors.onDark, fontFamily: fonts.bold, fontSize: 16 },
 });
