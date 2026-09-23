@@ -85,8 +85,24 @@ export default function LoginScreen() {
     setServerError(null);
     setSubmitting(true);
     try {
-      const { token, user } = await authApi.login(values);
-      await setSession(token, user);
+      let res;
+      try {
+        res = await authApi.login(values);
+      } catch (firstErr: any) {
+        if (
+          !firstErr?.response ||
+          firstErr?.response?.status === 502 ||
+          firstErr?.response?.status === 503 ||
+          firstErr?.code === "ECONNABORTED"
+        ) {
+          setServerError("Server is waking up. Retrying connection…");
+          await new Promise((r) => setTimeout(r, 2500));
+          res = await authApi.login(values);
+        } else {
+          throw firstErr;
+        }
+      }
+      await setSession(res.token, res.user);
     } catch (err: any) {
       if (err?.response?.status === 502 || err?.response?.status === 503) {
         setServerError("Backend service is waking up or connecting to database. Please tap Sign In again in a few seconds.");

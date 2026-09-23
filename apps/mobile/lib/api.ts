@@ -6,7 +6,7 @@ export const API_BASE_URL = (envUrl && envUrl.trim().length > 0)
   ? envUrl.replace(/\/+$/, "")
   : "https://speak2split.onrender.com";
 
-export const api = axios.create({ baseURL: API_BASE_URL, timeout: 15000 });
+export const api = axios.create({ baseURL: API_BASE_URL, timeout: 30000 });
 
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token;

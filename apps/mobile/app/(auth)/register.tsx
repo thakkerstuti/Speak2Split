@@ -30,11 +30,35 @@ export default function RegisterScreen() {
     setServerError(null);
     setSubmitting(true);
     try {
-      const { token, user } = await authApi.register(values);
-      await setSession(token, user);
+      let res;
+      try {
+        res = await authApi.register(values);
+      } catch (firstErr: any) {
+        if (
+          !firstErr?.response ||
+          firstErr?.response?.status === 502 ||
+          firstErr?.response?.status === 503 ||
+          firstErr?.code === "ECONNABORTED"
+        ) {
+          setServerError("Server is waking up. Retrying connection…");
+          await new Promise((r) => setTimeout(r, 2500));
+          try {
+            res = await authApi.register(values);
+          } catch (retryErr: any) {
+            if (retryErr?.response?.status === 409) {
+              res = await authApi.login({ email: values.email, password: values.password });
+            } else {
+              throw retryErr;
+            }
+          }
+        } else {
+          throw firstErr;
+        }
+      }
+      await setSession(res.token, res.user);
     } catch (err: any) {
       if (err?.response?.status === 502 || err?.response?.status === 503) {
-        setServerError("Backend service is waking up or connecting to database. Please tap Create account again in a few seconds.");
+        setServerError("Backend database is unreachable or waking up. Please try again in a few seconds.");
       } else {
         setServerError(err?.response?.data?.error ?? "Something went wrong. Please try again.");
       }
