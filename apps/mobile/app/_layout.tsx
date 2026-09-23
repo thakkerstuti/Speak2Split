@@ -1,13 +1,26 @@
+import "react-native-gesture-handler";
 import { useEffect, useState } from "react";
-import { Slot, useRouter, useSegments } from "expo-router";
+import { Slot, useRouter, useSegments, ErrorBoundary } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
 import * as SecureStore from "expo-secure-store";
-import { useFonts, PlusJakartaSans_400Regular, PlusJakartaSans_500Medium, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold, PlusJakartaSans_800ExtraBold } from "@expo-google-fonts/plus-jakarta-sans";
+import * as SplashScreen from "expo-splash-screen";
+import {
+  useFonts,
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+  PlusJakartaSans_800ExtraBold,
+} from "@expo-google-fonts/plus-jakarta-sans";
 import { useAuthStore } from "../store/auth-store";
 import { connectRealtime, disconnectRealtime } from "../lib/realtime";
 import { colors } from "../lib/theme";
 import { View, ActivityIndicator } from "react-native";
+
+export { ErrorBoundary };
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -33,39 +46,38 @@ function RealtimeLifecycle({ token }: { token: string | null }) {
   return null;
 }
 
-/**
- * Gates the app on two things, in order: has the person seen the
- * one-time onboarding slider yet, and are they authenticated. The
- * onboarding screen itself writes ONBOARDING_KEY to SecureStore once
- * the person finishes or skips it, so it's genuinely shown only once
- * per device install — not on every cold start.
- */
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { token, isHydrated, hydrate } = useAuthStore();
+  const { token, hasOnboarded, isHydrated, hydrate } = useAuthStore();
   const segments = useSegments();
   const router = useRouter();
-  const [hasOnboarded, setHasOnboarded] = useState<boolean | null>(null);
 
   useEffect(() => {
-    hydrate();
-    SecureStore.getItemAsync(ONBOARDING_KEY).then((v) => setHasOnboarded(v === "true"));
+    hydrate().catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (!isHydrated || hasOnboarded === null) return;
+    if (!isHydrated) return;
     const inAuthGroup = segments[0] === "(auth)";
     const onOnboarding = segments[0] === "onboarding";
 
-    if (!hasOnboarded && !onOnboarding) {
-      router.replace("/onboarding");
-    } else if (hasOnboarded && !token && !inAuthGroup) {
-      router.replace("/(auth)/login");
-    } else if (token && (inAuthGroup || onOnboarding)) {
-      router.replace("/(tabs)");
-    }
+    const timer = setTimeout(() => {
+      try {
+        if (!hasOnboarded && !onOnboarding) {
+          router.replace("/onboarding");
+        } else if (hasOnboarded && !token && !inAuthGroup) {
+          router.replace("/(auth)/login");
+        } else if (token && segments[0] !== "(tabs)") {
+          router.replace("/(tabs)");
+        }
+      } catch (e) {
+        console.warn("Navigation router error:", e);
+      }
+    }, 1);
+
+    return () => clearTimeout(timer);
   }, [token, isHydrated, hasOnboarded, segments]);
 
-  if (!isHydrated || hasOnboarded === null) {
+  if (!isHydrated) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
         <ActivityIndicator color={colors.primary} />
@@ -82,7 +94,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     PlusJakartaSans_400Regular,
     PlusJakartaSans_500Medium,
     PlusJakartaSans_600SemiBold,
@@ -90,7 +102,13 @@ export default function RootLayout() {
     PlusJakartaSans_800ExtraBold,
   });
 
-  if (!fontsLoaded) {
+  useEffect(() => {
+    if (fontsLoaded || fontError) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [fontsLoaded, fontError]);
+
+  if (!fontsLoaded && !fontError) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
         <ActivityIndicator color={colors.primary} />

@@ -1,9 +1,12 @@
 import axios from "axios";
 import { useAuthStore } from "../store/auth-store";
 
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
+const envUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+export const API_BASE_URL = (envUrl && envUrl.trim().length > 0)
+  ? envUrl.replace(/\/+$/, "")
+  : "https://speak2split.onrender.com";
 
-export const api = axios.create({ baseURL: API_BASE_URL });
+export const api = axios.create({ baseURL: API_BASE_URL, timeout: 15000 });
 
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token;

@@ -51,6 +51,7 @@ export function connectRealtime(token: string): Socket {
   setState("connecting");
   socket = io(API_BASE_URL, {
     auth: { token },
+    transports: ["websocket", "polling"],
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,

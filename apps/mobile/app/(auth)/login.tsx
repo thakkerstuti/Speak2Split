@@ -88,7 +88,11 @@ export default function LoginScreen() {
       const { token, user } = await authApi.login(values);
       await setSession(token, user);
     } catch (err: any) {
-      setServerError(err?.response?.data?.error ?? "Something went wrong. Please try again.");
+      if (err?.response?.status === 502 || err?.response?.status === 503) {
+        setServerError("Backend service is waking up or connecting to database. Please tap Sign In again in a few seconds.");
+      } else {
+        setServerError(err?.response?.data?.error ?? "Something went wrong. Please try again.");
+      }
     } finally {
       setSubmitting(false);
     }

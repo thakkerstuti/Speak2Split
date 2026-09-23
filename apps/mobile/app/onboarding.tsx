@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Dimensions, ScrollView, Pressable } from "react
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { Wallet, Mic, CalendarCheck, Users2, Sparkles, HandCoins } from "lucide-react-native";
+import { useAuthStore } from "../store/auth-store";
 import { colors, spacing, radius, typography, fonts } from "../lib/theme";
 
 const ONBOARDING_KEY = "speak2split_has_onboarded";
@@ -32,7 +33,7 @@ export default function OnboardingScreen() {
   const [index, setIndex] = useState(0);
 
   const finish = async () => {
-    await SecureStore.setItemAsync(ONBOARDING_KEY, "true");
+    await useAuthStore.getState().setOnboarded(true);
     router.replace("/(auth)/login");
   };
 
