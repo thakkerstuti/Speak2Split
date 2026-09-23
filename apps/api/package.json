@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "ts-node-dev --env-file=../../.env --respawn --transpile-only src/main.ts",
     "start:dev": "ts-node-dev --env-file=../../.env --respawn --transpile-only src/main.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"const fs=require('fs'); fs.mkdirSync('dist/apps/api/src', {recursive: true}); fs.writeFileSync('dist/apps/api/src/main.js', 'require(\\\"../../../main.js\\\");');\"",
     "start": "node dist/main.js"
   },
   "dependencies": {
