@@ -8,13 +8,11 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "plugins": [
-      "expo-router",
-      "expo-apple-authentication"
+      "expo-router"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.speak2split.app",
-      "usesAppleSignIn": true
+      "bundleIdentifier": "com.speak2split.app"
     },
     "android": {
       "package": "com.stuti19.speak2split"
