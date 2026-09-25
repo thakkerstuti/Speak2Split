@@ -18,14 +18,18 @@ export const colors = {
   primaryMuted: "#E0F2FE",
   primaryLight: "#EFF6FF",
   accent: "#2563EB",
+  coral: "#FF5A5F",
+  coralDark: "#E0484D",
+  coralMuted: "#FFEBEB",
   accentMuted: "#E0F2FE",
-  positive: "#10B981",
-  negative: "#EF4444",
+  positive: "#16A34A",
+  negative: "#FF5A5F",
   warning: "#F59E0B",
   purple: "#8B5CF6",
   orange: "#F97316",
   onDark: "#FFFFFF",
   pillBg: "#E0F2FE",
+  darkBtnBg: "#18181B",
 };
 
 export const spacing = {
