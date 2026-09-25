@@ -15,6 +15,13 @@ const CATEGORY_ITEMS = [
   { id: "OTHER", label: "Other", emoji: "👥", bgColor: "#F1F5F9" },
 ] as const;
 
+const formatCurrency = (val: any) => {
+  const num = Number(val);
+  if (isNaN(num) || !isFinite(num)) return "₹0";
+  if (num < 0) return `-₹${Math.abs(num).toLocaleString()}`;
+  return `₹${num.toLocaleString()}`;
+};
+
 export default function GroupsListScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -27,8 +34,9 @@ export default function GroupsListScreen() {
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: groupsApi.list });
 
   // Fetch balances & details for each group to display exact member count and net balance
+  const groupsKey = groupsQuery.data ? groupsQuery.data.map((g) => g.id).join(",") : "";
   const balancesQuery = useQuery({
-    queryKey: ["groups-balances-list", groupsQuery.data?.map((g) => g.id)],
+    queryKey: ["groups-balances-list", groupsKey],
     queryFn: async () => {
       if (!groupsQuery.data) return {};
       const results: Record<string, { memberCount: number; netBalance: number }> = {};
@@ -42,7 +50,7 @@ export default function GroupsListScreen() {
             const myBal = bal?.balances?.find((b) => b.userId === currentUser?.id);
             results[g.id] = {
               memberCount: detail?.members?.length ?? 1,
-              netBalance: myBal?.netBalance ?? 0,
+              netBalance: Number(myBal?.netBalance ?? 0),
             };
           } catch {
             results[g.id] = { memberCount: 1, netBalance: 0 };
@@ -96,7 +104,7 @@ export default function GroupsListScreen() {
         renderItem={({ item }) => {
           const catMeta = getCategoryMeta(item.type);
           const groupMeta = balancesQuery.data?.[item.id] || { memberCount: 1, netBalance: 0 };
-          const net = groupMeta.netBalance;
+          const net = Number(groupMeta.netBalance ?? 0);
 
           return (
             <Pressable style={styles.groupCard} onPress={() => router.push(`/(tabs)/groups/${item.id}`)}>
@@ -125,7 +133,7 @@ export default function GroupsListScreen() {
                     net === 0 && styles.balanceNeutral,
                   ]}
                 >
-                  {net < 0 ? `-₹${Math.abs(net).toLocaleString("en-IN")}` : `₹${net.toLocaleString("en-IN")}`}
+                  {formatCurrency(net)}
                 </Text>
               </View>
             </Pressable>
@@ -153,7 +161,6 @@ export default function GroupsListScreen() {
               placeholderTextColor="#94A3B8"
               value={name}
               onChangeText={setName}
-              autoFocus
             />
 
             {/* Category selection pills */}
@@ -399,4 +406,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 });
+
 
