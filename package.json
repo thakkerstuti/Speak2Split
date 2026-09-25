@@ -3,7 +3,6 @@
   "private": true,
   "version": "0.1.0",
   "description": "Say it. Split it. Settle it. Context-aware shared expense management.",
-  "main": "expo-router/entry",
   "workspaces": [
     "apps/*",
     "packages/*"
