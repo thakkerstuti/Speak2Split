@@ -20,22 +20,36 @@ export class GoogleAuthNotConfiguredError extends Error {}
 export class InvalidGoogleTokenError extends Error {}
 
 let client: OAuth2Client | null = null;
+
+export function getGoogleClientId(): string {
+  return (
+    process.env.GOOGLE_OAUTH_CLIENT_ID ||
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
+    process.env.GOOGLE_WEB_CLIENT_ID ||
+    process.env.GOOGLE_CLIENT_ID ||
+    ""
+  );
+}
+
 function getClient(): OAuth2Client {
-  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
-  if (!clientId) {
-    throw new GoogleAuthNotConfiguredError("GOOGLE_OAUTH_CLIENT_ID is not configured — see ENVIRONMENT.md");
-  }
-  if (!client) client = new OAuth2Client(clientId);
-  return client;
+  const clientId = getGoogleClientId();
+  return new OAuth2Client(clientId || undefined);
 }
 
 export async function verifyGoogleIdToken(idToken: string): Promise<VerifiedGoogleIdentity> {
   const oauthClient = getClient();
-  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID!;
+  const clientId = getGoogleClientId();
 
   let ticket;
   try {
-    ticket = await oauthClient.verifyIdToken({ idToken, audience: clientId });
+    if (clientId) {
+      const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || process.env.GOOGLE_ANDROID_CLIENT_ID;
+      const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || process.env.GOOGLE_IOS_CLIENT_ID;
+      const validAudiences = [clientId, androidClientId, iosClientId].filter(Boolean) as string[];
+      ticket = await oauthClient.verifyIdToken({ idToken, audience: validAudiences.length === 1 ? validAudiences[0] : validAudiences });
+    } else {
+      ticket = await oauthClient.verifyIdToken({ idToken });
+    }
   } catch (err) {
     throw new InvalidGoogleTokenError(`Google ID token verification failed: ${(err as Error).message}`);
   }
@@ -53,3 +67,4 @@ export async function verifyGoogleIdToken(idToken: string): Promise<VerifiedGoog
     avatarUrl: payload.picture,
   };
 }
+

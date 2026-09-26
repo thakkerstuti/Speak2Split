@@ -35,14 +35,14 @@ receiptsRouter.post("/scan", upload.single("image"), async (req: AuthedRequest, 
   let rawText: string;
   try {
     rawText = await runOcr(file.buffer);
-  } catch (err) {
+  } catch (err: any) {
     if (err instanceof OcrNotConfiguredError) {
       return res.status(503).json({ error: err.message });
     }
     if (err instanceof OcrError) {
       return res.status(422).json({ error: err.message });
     }
-    throw err;
+    return res.status(500).json({ error: err?.message || "Receipt OCR scan failed" });
   }
 
   const extraction = extractReceiptFields(rawText);

@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { Search, Bell, ShoppingCart, Wifi, Receipt, ChevronRight } from "lucide-react-native";
+import { Search, Bell, ShoppingCart, Wifi, Receipt, ChevronRight, Mic, Camera, Edit3 } from "lucide-react-native";
 import { groupsApi, settlementsApi, expensesApi } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { colors, spacing, radius, typography, fonts } from "../../lib/theme";
@@ -94,6 +94,45 @@ export default function DashboardScreen() {
         <Text style={styles.searchPlaceholder}>Search group or expenses</Text>
       </Pressable>
 
+      {/* Front Page Action Cards: Voice, Scan, Manual */}
+      <View style={styles.quickAddContainer}>
+        <Text style={styles.quickAddLabel}>ADD EXPENSE BY</Text>
+        <View style={styles.quickAddRow}>
+          <Pressable
+            style={styles.quickAddTile}
+            onPress={() => router.push({ pathname: "/(tabs)/add-expense", params: { mode: "voice" } })}
+          >
+            <View style={[styles.quickAddIconCircle, { backgroundColor: "#EEF2FF" }]}>
+              <Mic color={colors.primary} size={22} />
+            </View>
+            <Text style={styles.quickAddTileTitle}>Voice</Text>
+            <Text style={styles.quickAddTileSub}>Speech AI</Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.quickAddTile}
+            onPress={() => router.push({ pathname: "/(tabs)/add-expense", params: { mode: "receipt" } })}
+          >
+            <View style={[styles.quickAddIconCircle, { backgroundColor: "#F0FDF4" }]}>
+              <Camera color="#166534" size={22} />
+            </View>
+            <Text style={styles.quickAddTileTitle}>Scan</Text>
+            <Text style={styles.quickAddTileSub}>OCR Bill</Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.quickAddTile}
+            onPress={() => router.push({ pathname: "/(tabs)/add-expense", params: { mode: "manual" } })}
+          >
+            <View style={[styles.quickAddIconCircle, { backgroundColor: "#FEF3C7" }]}>
+              <Edit3 color="#92400E" size={22} />
+            </View>
+            <Text style={styles.quickAddTileTitle}>Manual</Text>
+            <Text style={styles.quickAddTileSub}>Type Details</Text>
+          </Pressable>
+        </View>
+      </View>
+
       {/* Recent Updates Banner */}
       {pendingSettlement ? (
         <View style={styles.updateCard}>
@@ -101,7 +140,7 @@ export default function DashboardScreen() {
             <Text style={styles.updateCardTag}>Recent Updates</Text>
             <Text style={styles.updateTitle}>{pendingSettlement.fromDisplayName} Made a Payment!</Text>
             <Text style={styles.updateSubtitle}>
-              Review and settle — ₹{pendingSettlement.amount.toFixed(0)}
+              Review and settle — ₹{Number(pendingSettlement.amount || 0).toFixed(0)}
             </Text>
           </View>
           <Pressable style={styles.settleButton} onPress={() => router.push(`/(tabs)/groups/${pendingSettlement.groupId}`)}>
@@ -149,7 +188,7 @@ export default function DashboardScreen() {
                   {group.name}
                 </Text>
                 <Text style={[styles.groupCardSubtitle, isPrimaryCard ? styles.textWhiteMuted : styles.textGray]}>
-                  Total Expenses: ₹{total.toFixed(0)}
+                  Total Expenses: ₹{(total || 0).toFixed(0)}
                 </Text>
 
                 <View style={styles.groupCardFooter}>
@@ -264,6 +303,60 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   searchPlaceholder: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 15 },
+  quickAddContainer: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md + 4,
+    backgroundColor: colors.card,
+    borderRadius: 20,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: colors.textPrimary,
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  quickAddLabel: {
+    fontFamily: fonts.bold,
+    fontSize: 11,
+    color: colors.textMuted,
+    letterSpacing: 0.8,
+    marginBottom: spacing.sm,
+  },
+  quickAddRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  quickAddTile: {
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    paddingVertical: spacing.md - 2,
+    paddingHorizontal: spacing.xs,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  quickAddIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+  quickAddTileTitle: {
+    fontFamily: fonts.bold,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  quickAddTileSub: {
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
   updateCard: {
     flexDirection: "row",
     alignItems: "center",

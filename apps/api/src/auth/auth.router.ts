@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { UserModel } from "../db/models/User";
 import { normalizePhone } from "@speak2split/shared";
-import { verifyGoogleIdToken, GoogleAuthNotConfiguredError, InvalidGoogleTokenError } from "./google-auth";
+import { verifyGoogleIdToken, getGoogleClientId, GoogleAuthNotConfiguredError, InvalidGoogleTokenError } from "./google-auth";
 import { verifyAppleIdToken, AppleAuthNotConfiguredError, InvalidAppleTokenError } from "./apple-auth";
 import { JWT_SECRET } from "../config";
 
@@ -39,6 +39,13 @@ const loginSchema = z.object({
 });
 
 export const authRouter = Router();
+
+authRouter.get("/config", (_req: Request, res: Response) => {
+  return res.json({
+    googleWebClientId: getGoogleClientId(),
+  });
+});
+
 
 authRouter.post("/register", async (req: Request, res: Response) => {
   try {

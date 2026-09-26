@@ -43,15 +43,13 @@ export default function LoginScreen() {
   const google = useGoogleAuth(handleGoogleIdToken);
 
   const onPressGoogle = async () => {
-    if (!google.isConfigured) {
-      Alert.alert(
-        "Google Sign-In Notice",
-        "Google Sign-In requires your Google Web Client ID (EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID). Email/Password Sign-In is fully active and recommended for testing!"
-      );
-      return;
+    try {
+      await google.promptAsync();
+    } catch (e: any) {
+      console.warn("Google sign-in error:", e?.message || e);
     }
-    await google.promptAsync();
   };
+
 
   const onPressApple = async () => {
     setSocialLoading("apple");

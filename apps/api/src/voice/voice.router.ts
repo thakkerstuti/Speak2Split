@@ -24,13 +24,13 @@ voiceRouter.post("/transcribe", upload.single("audio"), async (req: AuthedReques
   try {
     const result = await transcribeAudio(file.buffer, file.originalname || "recording.m4a", file.mimetype);
     return res.json(result);
-  } catch (err) {
+  } catch (err: any) {
     if (err instanceof SttNotConfiguredError) {
       return res.status(503).json({ error: err.message });
     }
     if (err instanceof SttTranscriptionError) {
       return res.status(422).json({ error: err.message });
     }
-    throw err;
+    return res.status(500).json({ error: err?.message || "Transcription failed" });
   }
 });

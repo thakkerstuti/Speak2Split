@@ -111,6 +111,7 @@ export type NameResolutionResult =
 // ---------- API functions ----------
 
 export const authApi = {
+  getConfig: () => api.get<{ googleWebClientId: string }>("/auth/config").then((r) => r.data),
   register: (input: { email: string; password: string; displayName: string }) =>
     api.post<{ token: string; user: User }>("/auth/register", input).then((r) => r.data),
   login: (input: { email: string; password: string }) =>
@@ -120,6 +121,7 @@ export const authApi = {
   apple: (identityToken: string, fullName?: string) =>
     api.post<{ token: string; user: User }>("/auth/apple", { identityToken, fullName }).then((r) => r.data),
 };
+
 
 export const groupsApi = {
   list: () => api.get<Group[]>("/groups").then((r) => r.data),

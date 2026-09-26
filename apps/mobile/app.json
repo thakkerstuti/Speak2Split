@@ -2,7 +2,7 @@
   "expo": {
     "name": "Speak2Split",
     "slug": "speak2split",
-    "owner": "stuti20",
+    "owner": "stuti21",
     "scheme": "speak2split",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -22,7 +22,7 @@
         "origin": false
       },
       "eas": {
-        "projectId": "418dee9c-524d-46c8-bb41-35170821e7a9"
+        "projectId": "6f08465e-978d-4a00-85a5-e3434596a4c1"
       }
     }
   }
