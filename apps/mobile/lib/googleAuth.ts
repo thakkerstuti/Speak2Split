@@ -28,6 +28,7 @@ export function useGoogleAuth(onIdToken: (idToken: string) => void) {
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     clientId: effectiveClientId,
+    webClientId: effectiveClientId,
     androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || effectiveClientId,
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || effectiveClientId,
   });
