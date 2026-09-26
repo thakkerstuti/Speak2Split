@@ -20,8 +20,10 @@ export default function DashboardScreen() {
 
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: groupsApi.list });
 
+  const groupsKey = groupsQuery.data ? groupsQuery.data.map((g) => g.id).join(",") : "";
+
   const balancesQuery = useQuery({
-    queryKey: ["all-balances", groupsQuery.data?.map((g) => g.id)],
+    queryKey: ["all-balances", groupsKey],
     queryFn: async () => {
       if (!groupsQuery.data) return [];
       return Promise.all(groupsQuery.data.map((g) => settlementsApi.balances(g.id).then((b) => ({ group: g, ...b }))));
@@ -30,7 +32,7 @@ export default function DashboardScreen() {
   });
 
   const recentExpensesQuery = useQuery({
-    queryKey: ["all-recent-expenses", groupsQuery.data?.map((g) => g.id)],
+    queryKey: ["all-recent-expenses", groupsKey],
     queryFn: async () => {
       if (!groupsQuery.data) return [];
       const all = await Promise.all(

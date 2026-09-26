@@ -81,18 +81,18 @@ export default function SearchScreen() {
             <Text style={styles.sectionTitle}>{section.title}</Text>
 
             {section.key === "expenses" &&
-              searchQuery.data!.expenses.map((e) => (
-                <Pressable key={e.id} style={styles.resultRow} onPress={() => router.push(`/(tabs)/groups/${e.group_id}`)}>
+              searchQuery.data!.expenses.map((e: any) => (
+                <Pressable key={e.id} style={styles.resultRow} onPress={() => router.push(`/(tabs)/groups/${e.groupId ?? e.group_id}`)}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.resultTitle}>{e.title}</Text>
-                    <Text style={styles.muted}>{e.group_name} · {e.category} · {new Date(e.expense_date).toLocaleDateString()}</Text>
+                    <Text style={styles.muted}>{e.groupName ?? e.group_name} · {e.category} · {new Date(e.expenseDate ?? e.expense_date ?? Date.now()).toLocaleDateString()}</Text>
                   </View>
                   <Text style={styles.resultAmount}>₹{Number(e.amount).toFixed(2)}</Text>
                 </Pressable>
               ))}
 
             {section.key === "groups" &&
-              searchQuery.data!.groups.map((g) => (
+              searchQuery.data!.groups.map((g: any) => (
                 <Pressable key={g.id} style={styles.resultRow} onPress={() => router.push(`/(tabs)/groups/${g.id}`)}>
                   <Text style={styles.resultTitle}>{g.name}</Text>
                   <Text style={styles.muted}>{g.type}</Text>
@@ -100,20 +100,20 @@ export default function SearchScreen() {
               ))}
 
             {section.key === "people" &&
-              searchQuery.data!.people.map((p) => (
+              searchQuery.data!.people.map((p: any) => (
                 <View key={p.id} style={styles.resultRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.resultTitle}>{p.display_name}</Text>
+                    <Text style={styles.resultTitle}>{p.displayName ?? p.display_name}</Text>
                     <Text style={styles.muted}>{p.phone ?? p.email ?? "No contact info"}</Text>
                   </View>
                 </View>
               ))}
 
             {section.key === "settlements" &&
-              searchQuery.data!.settlements.map((s) => (
-                <Pressable key={s.id} style={styles.resultRow} onPress={() => router.push(`/(tabs)/groups/${s.group_id}`)}>
+              searchQuery.data!.settlements.map((s: any) => (
+                <Pressable key={s.id} style={styles.resultRow} onPress={() => router.push(`/(tabs)/groups/${s.groupId ?? s.group_id}`)}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.resultTitle}>{s.from_name} → {s.to_name}</Text>
+                    <Text style={styles.resultTitle}>{s.fromDisplayName ?? s.from_name} → {s.toDisplayName ?? s.to_name}</Text>
                     <Text style={styles.muted}>{s.method} · {s.status}</Text>
                   </View>
                   <Text style={styles.resultAmount}>₹{Number(s.amount).toFixed(2)}</Text>
@@ -121,8 +121,8 @@ export default function SearchScreen() {
               ))}
 
             {section.key === "recurringExpenses" &&
-              searchQuery.data!.recurringExpenses.map((r) => (
-                <Pressable key={r.id} style={styles.resultRow} onPress={() => router.push(`/(tabs)/groups/${r.group_id}`)}>
+              searchQuery.data!.recurringExpenses.map((r: any) => (
+                <Pressable key={r.id} style={styles.resultRow} onPress={() => router.push(`/(tabs)/groups/${r.groupId ?? r.group_id}`)}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.resultTitle}>{r.title}</Text>
                     <Text style={styles.muted}>{r.frequency}</Text>
