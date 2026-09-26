@@ -6,6 +6,8 @@ import { authApi } from "./api";
 
 WebBrowser.maybeCompleteAuthSession();
 
+const DUMMY_CLIENT_ID = "1234567890-dummy.apps.googleusercontent.com";
+
 export function useGoogleAuth(onIdToken: (idToken: string) => void) {
   const [serverClientId, setServerClientId] = useState<string>("");
 
@@ -22,19 +24,16 @@ export function useGoogleAuth(onIdToken: (idToken: string) => void) {
 
   const activeClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || serverClientId;
   const isConfigured = !!activeClientId;
+  const effectiveClientId = activeClientId || DUMMY_CLIENT_ID;
 
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest(
-    isConfigured
-      ? {
-          clientId: activeClientId,
-          androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || activeClientId,
-          iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || activeClientId,
-        }
-      : {}
-  );
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: effectiveClientId,
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || effectiveClientId,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || effectiveClientId,
+  });
 
   useEffect(() => {
-    if (response?.type === "success") {
+    if (isConfigured && response?.type === "success") {
       const idToken =
         response.params?.id_token ||
         (response as any).authentication?.idToken ||
@@ -43,7 +42,7 @@ export function useGoogleAuth(onIdToken: (idToken: string) => void) {
         onIdToken(idToken);
       }
     }
-  }, [response]);
+  }, [response, isConfigured]);
 
   const triggerPrompt = async () => {
     let currentId = activeClientId;
@@ -59,8 +58,8 @@ export function useGoogleAuth(onIdToken: (idToken: string) => void) {
 
     if (!currentId) {
       Alert.alert(
-        "Google Sign-In Configuration",
-        "Google Sign-In requires a Google Web Client ID.\n\nPlease add GOOGLE_OAUTH_CLIENT_ID to your Render Environment Variables (or set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in mobile environment)."
+        "Google Sign-In Notice",
+        "Google Sign-In requires your Google Web Client ID (GOOGLE_OAUTH_CLIENT_ID on Render or EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in mobile environment). Email/Password login is active and working!"
       );
       return;
     }
