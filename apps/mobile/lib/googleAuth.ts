@@ -7,6 +7,12 @@ import { authApi } from "./api";
 
 WebBrowser.maybeCompleteAuthSession();
 
+// Dynamic native scheme redirect URI matching app scheme "speak2split" in app.json
+const NATIVE_REDIRECT_URI = makeRedirectUri({
+  scheme: "speak2split",
+  preferLocalhost: true,
+});
+
 export function useGoogleAuth(onIdToken: (idToken: string) => void) {
   const [serverClientId, setServerClientId] = useState<string>("");
 
@@ -27,16 +33,10 @@ export function useGoogleAuth(onIdToken: (idToken: string) => void) {
 
   const isConfigured = !!(webClientId || androidClientId);
 
-  // If using a WEB client ID on native Android without an explicit Android Client ID,
-  // we must use Expo Auth Proxy (HTTPS URI) because Google blocks custom scheme URIs for Web client types.
-  const redirectUri = !androidClientId && webClientId
-    ? makeRedirectUri({
-        native: "https://auth.expo.io/@stuti21/speak2split",
-      })
-    : undefined;
+  const redirectUri = NATIVE_REDIRECT_URI;
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: webClientId || androidClientId,
+    clientId: webClientId || androidClientId || undefined,
     webClientId: webClientId || undefined,
     androidClientId: androidClientId || undefined,
     iosClientId: iosClientId || undefined,
@@ -47,10 +47,14 @@ export function useGoogleAuth(onIdToken: (idToken: string) => void) {
     if (isConfigured && response?.type === "success") {
       const idToken =
         response.params?.id_token ||
-        (response as any).authentication?.idToken ||
-        (response as any).authentication?.accessToken;
+        (response as any).authentication?.idToken;
       if (idToken) {
         onIdToken(idToken);
+      } else {
+        Alert.alert(
+          "Google Sign-In Error",
+          "No ID token was returned by Google. Please check client ID configuration."
+        );
       }
     }
   }, [response, isConfigured]);
@@ -75,6 +79,11 @@ export function useGoogleAuth(onIdToken: (idToken: string) => void) {
       return;
     }
 
+    if (!request) {
+      // Re-trigger auth prompt directly
+      return promptAsync();
+    }
+
     return promptAsync();
   };
 
@@ -86,4 +95,3 @@ export function useGoogleAuth(onIdToken: (idToken: string) => void) {
     hadError: response?.type === "error",
   };
 }
-

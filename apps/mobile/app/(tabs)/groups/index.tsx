@@ -360,8 +360,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   catPillActive: {
-    backgroundColor: colors.coral,
-    borderColor: colors.coral,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   catEmoji: {
     fontSize: 15,
@@ -375,11 +375,11 @@ const styles = StyleSheet.create({
     color: colors.onDark,
   },
   createBtn: {
-    backgroundColor: colors.coral,
+    backgroundColor: colors.primary,
     borderRadius: 18,
     paddingVertical: 16,
     alignItems: "center",
-    shadowColor: colors.coral,
+    shadowColor: colors.primary,
     shadowOpacity: 0.25,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },

@@ -113,6 +113,9 @@ export default function LoginScreen() {
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.content}>
         <View style={styles.header}>
+          <View style={styles.logoBadge}>
+            <Text style={styles.logoBadgeText}>S2S</Text>
+          </View>
           <Text style={styles.wordmark}>Speak2Split</Text>
           <Text style={styles.tagline}>Say it. Split it. Settle it with ease.</Text>
         </View>
@@ -210,7 +213,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   content: { flex: 1, paddingHorizontal: spacing.lg, justifyContent: "center" },
   header: { marginBottom: spacing.xl, alignItems: "center" },
-  wordmark: { ...typography.display, fontSize: 32, color: colors.primary, letterSpacing: -0.5 },
+  logoBadge: { width: 54, height: 54, borderRadius: 18, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginBottom: spacing.sm },
+  logoBadgeText: { color: "#FFFFFF", fontFamily: fonts.extrabold, fontSize: 18, letterSpacing: -0.5 },
+  wordmark: { ...typography.display, fontSize: 32, color: colors.textPrimary, letterSpacing: -0.8 },
   tagline: { ...typography.bodyRegular, color: colors.textSecondary, marginTop: 4 },
   formCard: {
     backgroundColor: colors.card,
@@ -218,19 +223,14 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    shadowColor: colors.textPrimary,
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
   },
   label: { ...typography.label, color: colors.textMuted },
   input: {
     marginTop: spacing.xs + 2,
-    backgroundColor: "#F8FAFC",
-    borderRadius: radius.md,
+    backgroundColor: colors.bg,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderSubtle,
     paddingHorizontal: spacing.md,
     paddingVertical: 14,
     color: colors.textPrimary,
@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
   },
   buttonText: { color: colors.onDark, fontSize: 16, fontFamily: fonts.bold },
   linkRow: { marginTop: spacing.lg, alignItems: "center" },
-  linkText: { color: colors.textSecondary, fontSize: 14, fontFamily: fonts.semibold },
+  linkText: { color: colors.primary, fontSize: 14, fontFamily: fonts.semibold },
   divider: { flexDirection: "row", alignItems: "center", marginTop: spacing.xl, gap: spacing.sm },
   dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
   dividerText: { color: colors.textMuted, fontSize: 12, fontFamily: fonts.semibold, letterSpacing: 1 },

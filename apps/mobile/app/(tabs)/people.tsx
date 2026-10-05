@@ -105,14 +105,14 @@ export default function PeopleScreen() {
         data={contactsQuery.data ?? []}
         keyExtractor={(c) => c.id}
         renderItem={({ item }) => (
-          <View style={styles.row}>
+          <View style={styles.cardRow}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{item.displayName.slice(0, 1).toUpperCase()}</Text>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>{item.displayName}</Text>
               <Text style={styles.muted}>
-                {item.targetUserId ? "Speak2Split user" : item.phone || item.email || "No identifier"}
+                {item.targetUserId ? "Speak2Split member" : item.phone || item.email || "No identifier"}
               </Text>
             </View>
           </View>
@@ -133,7 +133,7 @@ export default function PeopleScreen() {
             <TextInput style={styles.input} placeholder="Phone (optional if email given)" placeholderTextColor={colors.textMuted} keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
             <TextInput style={styles.input} placeholder="Email (optional if phone given)" placeholderTextColor={colors.textMuted} autoCapitalize="none" value={email} onChangeText={setEmail} />
             <Pressable style={styles.button} onPress={() => addMutation.mutate()} disabled={!name || (!phone && !email)}>
-              <Text style={styles.buttonText}>{addMutation.isPending ? "Adding…" : "Add"}</Text>
+              <Text style={styles.buttonText}>{addMutation.isPending ? "Adding…" : "Add person"}</Text>
             </Pressable>
             <Pressable style={{ marginTop: spacing.md, alignItems: "center" }} onPress={() => setAddModalVisible(false)}>
               <Text style={styles.muted}>Cancel</Text>
@@ -147,20 +147,30 @@ export default function PeopleScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.xxl },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.xxl + 8 },
   title: { ...typography.display, fontSize: 28, color: colors.textPrimary },
   iconButton: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.card, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
-  noticeCard: { margin: spacing.lg, backgroundColor: colors.card, borderRadius: radius.md, padding: spacing.md },
-  row: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.sm },
-  avatar: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.accentMuted, alignItems: "center", justifyContent: "center" },
-  avatarText: { color: colors.accent, fontWeight: "700" },
+  noticeCard: { margin: spacing.lg, backgroundColor: colors.card, borderRadius: 16, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
+  cardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    marginBottom: spacing.xs + 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  avatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center" },
+  avatarText: { color: colors.primary, fontWeight: "700", fontSize: 16 },
   name: { color: colors.textPrimary, fontSize: 15, fontWeight: "600" },
   muted: { color: colors.textMuted, fontSize: 13 },
   empty: { alignItems: "center", paddingTop: spacing.xl },
   modalOverlay: { flex: 1, backgroundColor: "#00000090", justifyContent: "flex-end" },
-  modalCard: { backgroundColor: colors.bgElevated, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: spacing.lg },
+  modalCard: { backgroundColor: colors.bgElevated, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: spacing.lg },
   modalTitle: { ...typography.title, color: colors.textPrimary, marginBottom: spacing.xs },
-  input: { backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, color: colors.textPrimary, fontSize: 16, marginTop: spacing.md },
-  button: { marginTop: spacing.lg, backgroundColor: colors.accent, borderRadius: radius.md, paddingVertical: 16, alignItems: "center" },
-  buttonText: { color: colors.bg, fontWeight: "700", fontSize: 16 },
+  input: { backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: spacing.md, color: colors.textPrimary, fontSize: 16, marginTop: spacing.md },
+  button: { marginTop: spacing.lg, backgroundColor: colors.primary, borderRadius: radius.pill, paddingVertical: 16, alignItems: "center" },
+  buttonText: { color: colors.onDark, fontWeight: "700", fontSize: 16 },
 });

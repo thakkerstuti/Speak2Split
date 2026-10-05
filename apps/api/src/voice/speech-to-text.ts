@@ -1,13 +1,11 @@
 /**
  * Speech-to-Text Provider
  *
- * Real integration with OpenAI's Whisper transcription API. Kept behind a
- * narrow interface (`transcribeAudio`) so a different provider (Google
- * Speech-to-Text, Deepgram — both already documented in .env.example) can
- * be swapped in without touching any calling code. If the configured
- * provider's credential is missing, this throws a specific, clear error —
- * it never returns sample/placeholder text pretending to be a real
- * transcription.
+ * Real integration with Speech-to-Text APIs: Gnani Prisma v2.5, OpenAI Whisper,
+ * Groq Whisper, Gemini, and Google Speech-to-Text. Kept behind a narrow interface
+ * (`transcribeAudio`) so providers can be configured via STT_PROVIDER env var
+ * without touching calling code. If the configured provider's credential is
+ * missing, this throws a specific, clear error.
  */
 
 export class SttNotConfiguredError extends Error {}
@@ -16,6 +14,86 @@ export class SttTranscriptionError extends Error {}
 export interface TranscriptionResult {
   transcript: string;
   languageDetected?: string;
+}
+
+async function transcribeWithGnani(
+  audioBuffer: Buffer,
+  fileName: string,
+  mimeType: string,
+  languageCodeOverride?: string
+): Promise<TranscriptionResult> {
+  const apiKey = process.env.GNANI_API_KEY;
+  if (!apiKey) {
+    throw new SttNotConfiguredError("GNANI_API_KEY is not configured");
+  }
+
+  if (!audioBuffer || audioBuffer.length === 0) {
+    throw new SttTranscriptionError("Audio file is empty");
+  }
+
+  const languageCode = languageCodeOverride || process.env.GNANI_LANGUAGE_CODE || "en-IN";
+  const preferredLanguage = process.env.GNANI_PREFERRED_LANGUAGE || languageCode;
+  const safeMime = mimeType || "audio/m4a";
+  const safeName = fileName || "recording.m4a";
+
+  const formData = new FormData();
+  formData.append("audio_file", new Blob([audioBuffer], { type: safeMime }), safeName);
+  formData.append("language_code", languageCode);
+  formData.append("preferred_language", preferredLanguage);
+  formData.append("format", "transcribe");
+  formData.append("itn_native_numerals", "true");
+
+  console.log(
+    `[Gnani STT] Requesting transcription (${audioBuffer.length} bytes, mime=${safeMime}, lang=${languageCode})`
+  );
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    const response = await fetch("https://api.vachana.ai/stt/v3", {
+      method: "POST",
+      headers: {
+        "X-API-Key-ID": apiKey,
+      },
+      body: formData as any,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const body = await response.text();
+      if (response.status === 429) {
+        throw new SttTranscriptionError("Gnani Prisma rate limit exceeded (HTTP 429). Please try again in a moment.");
+      }
+      const safeKeyPattern = new RegExp(apiKey.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&"), "g");
+      const safeBody = body.replace(safeKeyPattern, "***");
+      throw new SttTranscriptionError(`Gnani Prisma transcription failed (HTTP ${response.status}): ${safeBody}`);
+    }
+
+    const json = (await response.json()) as any;
+    if (json.success === false) {
+      throw new SttTranscriptionError(
+        `Gnani Prisma transcription failed: ${json.error || json.message || "Unknown error"}`
+      );
+    }
+
+    const transcript = (json.transcript || json.text || json.result || json.data?.transcript || "").trim();
+    if (!transcript) {
+      throw new SttTranscriptionError("Gnani Prisma returned no transcript text");
+    }
+
+    return { transcript, languageDetected: json.language || languageCode };
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new SttTranscriptionError("Gnani Prisma API request timed out (30s)");
+    }
+    if (err instanceof SttNotConfiguredError || err instanceof SttTranscriptionError) {
+      throw err;
+    }
+    throw new SttTranscriptionError(`Gnani Prisma STT error: ${err?.message || err}`);
+  }
 }
 
 async function transcribeWithGroq(audioBuffer: Buffer, fileName: string, mimeType: string): Promise<TranscriptionResult> {
@@ -162,10 +240,18 @@ async function transcribeWithGoogleSpeech(audioBuffer: Buffer): Promise<Transcri
   return { transcript };
 }
 
-export async function transcribeAudio(audioBuffer: Buffer, fileName: string, mimeType: string): Promise<TranscriptionResult> {
+export async function transcribeAudio(
+  audioBuffer: Buffer,
+  fileName: string,
+  mimeType: string,
+  languageCode?: string
+): Promise<TranscriptionResult> {
   const preferred = process.env.STT_PROVIDER?.toLowerCase();
 
   // Explicit provider selection: call requested provider directly without fallback
+  if (preferred === "gnani") {
+    return transcribeWithGnani(audioBuffer, fileName, mimeType, languageCode);
+  }
   if (preferred === "groq") {
     return transcribeWithGroq(audioBuffer, fileName, mimeType);
   }
@@ -181,6 +267,7 @@ export async function transcribeAudio(audioBuffer: Buffer, fileName: string, mim
 
   // Automatic cascade order when STT_PROVIDER is not set
   const defaultOrder = [
+    { provider: "gnani", fn: () => transcribeWithGnani(audioBuffer, fileName, mimeType, languageCode) },
     { provider: "groq", fn: () => transcribeWithGroq(audioBuffer, fileName, mimeType) },
     { provider: "gemini", fn: () => transcribeWithGemini(audioBuffer, mimeType) },
     { provider: "whisper", fn: () => transcribeWithWhisper(audioBuffer, fileName, mimeType) },
@@ -202,10 +289,11 @@ export async function transcribeAudio(audioBuffer: Buffer, fileName: string, mim
 
   if (errors.length === 0) {
     throw new SttNotConfiguredError(
-      "No STT API keys configured on server. Set GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or GOOGLE_SPEECH_API_KEY on Render."
+      "No STT API keys configured on server. Set GNANI_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or GOOGLE_SPEECH_API_KEY."
     );
   }
 
   throw new SttTranscriptionError(`All transcription providers failed:\n${errors.join("\n")}`);
 }
+
 

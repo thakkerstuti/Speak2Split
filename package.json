@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "eas-build-postinstall": "npm run build --workspace=@speak2split/shared",
     "dev:api": "npm run start:dev --workspace=@speak2split/api",
     "dev:mobile": "npm run start --workspace=@speak2split/mobile",
     "build": "npm run build --workspace=@speak2split/shared && npm run build --workspace=@speak2split/api",

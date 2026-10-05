@@ -46,6 +46,24 @@ export default function DashboardScreen() {
     enabled: !!groupsQuery.data,
   });
 
+  // Calculate overall user balances across all groups
+  const overallSummary = useMemo(() => {
+    let youOwe = 0;
+    let youAreOwed = 0;
+    if (balancesQuery.data && user) {
+      for (const g of balancesQuery.data) {
+        if (g.suggestedSettlements) {
+          for (const s of g.suggestedSettlements) {
+            if (s.fromUserId === user.id) youOwe += Number(s.amount || 0);
+            if (s.toUserId === user.id) youAreOwed += Number(s.amount || 0);
+          }
+        }
+      }
+    }
+    const net = youAreOwed - youOwe;
+    return { youOwe, youAreOwed, net };
+  }, [balancesQuery.data, user]);
+
   const pendingSettlement = useMemo(() => {
     if (!balancesQuery.data || !user) return null;
     for (const g of balancesQuery.data) {
@@ -69,40 +87,73 @@ export default function DashboardScreen() {
       contentContainerStyle={{ paddingBottom: spacing.xxl + 40 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
     >
-      {/* Top Header Row with Logo & Avatar */}
+      {/* Header Bar */}
       <View style={styles.topHeader}>
-        <Text style={styles.brandTitle}>Speak2Split</Text>
+        <View style={styles.brandBadgeRow}>
+          <View style={styles.brandIconCircle}>
+            <Receipt color={colors.card} size={18} strokeWidth={2.5} />
+          </View>
+          <Text style={styles.brandTitle}>Speak2Split</Text>
+        </View>
         <View style={styles.headerIcons}>
           <Pressable style={styles.iconCircle} onPress={() => router.push("/(tabs)/notifications")}>
-            <Bell color={colors.textPrimary} size={19} />
+            <Bell color={colors.textPrimary} size={18} />
           </Pressable>
-          <View style={styles.avatarCircle}>
+          <Pressable style={styles.avatarCircle} onPress={() => router.push("/(tabs)/profile")}>
             <Text style={styles.avatarText}>{displayName.slice(0, 1).toUpperCase()}</Text>
-          </View>
+          </Pressable>
         </View>
       </View>
 
       {/* Greeting Title */}
       <View style={styles.greetingSection}>
-        <Text style={styles.hi}>Hi {displayName}! 👋</Text>
-        <Text style={styles.subGreeting}>Control your expenses here.</Text>
+        <Text style={styles.hi}>Welcome back, {displayName}</Text>
+        <Text style={styles.subGreeting}>Here is your expense summary for today.</Text>
+      </View>
+
+      {/* Modern Fintech Total Balance Card */}
+      <View style={styles.balanceCard}>
+        <View style={styles.balanceCardHeader}>
+          <Text style={styles.balanceCardLabel}>TOTAL NET BALANCE</Text>
+          <View style={[styles.netStatusBadge, overallSummary.net >= 0 ? styles.badgePositive : styles.badgeNegative]}>
+            <Text style={[styles.netStatusText, overallSummary.net >= 0 ? styles.textPositive : styles.textNegative]}>
+              {overallSummary.net >= 0 ? "Owed to You" : "You Owe"}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={styles.balanceAmountText}>
+          {overallSummary.net >= 0 ? `+₹${overallSummary.net.toFixed(2)}` : `-₹${Math.abs(overallSummary.net).toFixed(2)}`}
+        </Text>
+
+        <View style={styles.balanceBreakdownRow}>
+          <View style={styles.breakdownCol}>
+            <Text style={styles.breakdownLabel}>YOU OWE</Text>
+            <Text style={[styles.breakdownValue, { color: colors.coral }]}>₹{overallSummary.youOwe.toFixed(2)}</Text>
+          </View>
+          <View style={styles.breakdownDivider} />
+          <View style={styles.breakdownCol}>
+            <Text style={styles.breakdownLabel}>YOU ARE OWED</Text>
+            <Text style={[styles.breakdownValue, { color: colors.positive }]}>₹{overallSummary.youAreOwed.toFixed(2)}</Text>
+          </View>
+        </View>
       </View>
 
       {/* Search Bar */}
       <Pressable style={styles.searchBar} onPress={() => router.push("/(tabs)/search")}>
         <Search color={colors.textMuted} size={18} />
-        <Text style={styles.searchPlaceholder}>Search group or expenses</Text>
+        <Text style={styles.searchPlaceholder}>Search groups or expenses...</Text>
       </Pressable>
 
-      {/* Front Page Action Cards: Voice, Scan, Manual */}
+      {/* Quick Add Expense Action Section */}
       <View style={styles.quickAddContainer}>
-        <Text style={styles.quickAddLabel}>ADD EXPENSE BY</Text>
+        <Text style={styles.quickAddLabel}>QUICK EXPENSE ENTRY</Text>
         <View style={styles.quickAddRow}>
           <Pressable
             style={styles.quickAddTile}
             onPress={() => router.push({ pathname: "/(tabs)/add-expense", params: { mode: "voice" } })}
           >
-            <View style={[styles.quickAddIconCircle, { backgroundColor: "#EEF2FF" }]}>
+            <View style={[styles.quickAddIconCircle, { backgroundColor: colors.primaryLight }]}>
               <Mic color={colors.primary} size={22} />
             </View>
             <Text style={styles.quickAddTileTitle}>Voice</Text>
@@ -113,8 +164,8 @@ export default function DashboardScreen() {
             style={styles.quickAddTile}
             onPress={() => router.push({ pathname: "/(tabs)/add-expense", params: { mode: "receipt" } })}
           >
-            <View style={[styles.quickAddIconCircle, { backgroundColor: "#F0FDF4" }]}>
-              <Camera color="#166534" size={22} />
+            <View style={[styles.quickAddIconCircle, { backgroundColor: colors.positiveSoft }]}>
+              <Camera color={colors.positiveDark} size={22} />
             </View>
             <Text style={styles.quickAddTileTitle}>Scan</Text>
             <Text style={styles.quickAddTileSub}>OCR Bill</Text>
@@ -124,8 +175,8 @@ export default function DashboardScreen() {
             style={styles.quickAddTile}
             onPress={() => router.push({ pathname: "/(tabs)/add-expense", params: { mode: "manual" } })}
           >
-            <View style={[styles.quickAddIconCircle, { backgroundColor: "#FEF3C7" }]}>
-              <Edit3 color="#92400E" size={22} />
+            <View style={[styles.quickAddIconCircle, { backgroundColor: colors.warningSoft }]}>
+              <Edit3 color={colors.warning} size={22} />
             </View>
             <Text style={styles.quickAddTileTitle}>Manual</Text>
             <Text style={styles.quickAddTileSub}>Type Details</Text>
@@ -133,35 +184,25 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      {/* Recent Updates Banner */}
+      {/* Recent Updates / Pending Settlement Banner */}
       {pendingSettlement ? (
         <View style={styles.updateCard}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.updateCardTag}>Recent Updates</Text>
-            <Text style={styles.updateTitle}>{pendingSettlement.fromDisplayName} Made a Payment!</Text>
+            <Text style={styles.updateCardTag}>PAYMENT NOTIFICATION</Text>
+            <Text style={styles.updateTitle}>{pendingSettlement.fromDisplayName} sent a payment</Text>
             <Text style={styles.updateSubtitle}>
-              Review and settle — ₹{Number(pendingSettlement.amount || 0).toFixed(0)}
+              Settle balance of ₹{Number(pendingSettlement.amount || 0).toFixed(2)} in {pendingSettlement.groupName}
             </Text>
           </View>
           <Pressable style={styles.settleButton} onPress={() => router.push(`/(tabs)/groups/${pendingSettlement.groupId}`)}>
-            <Text style={styles.settleButtonText}>Settle Now</Text>
+            <Text style={styles.settleButtonText}>Settle</Text>
           </Pressable>
         </View>
-      ) : (
-        <View style={styles.updateCardDemo}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.updateTitle}>Group Balances Updated</Text>
-            <Text style={styles.updateSubtitle}>All balances are up to date.</Text>
-          </View>
-          <Pressable style={styles.settleButton} onPress={() => router.push("/(tabs)/groups")}>
-            <Text style={styles.settleButtonText}>View</Text>
-          </Pressable>
-        </View>
-      )}
+      ) : null}
 
       {/* My Groups Section */}
       <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionTitle}>My Groups</Text>
+        <Text style={styles.sectionTitle}>Active Groups</Text>
         <Pressable onPress={() => router.push("/(tabs)/groups")}>
           <Text style={styles.viewAll}>View All</Text>
         </Pressable>
@@ -169,26 +210,28 @@ export default function DashboardScreen() {
 
       {groupsQuery.data?.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>No groups yet</Text>
-          <Text style={styles.muted}>Create one to start splitting expenses.</Text>
+          <Text style={styles.emptyTitle}>No groups created yet</Text>
+          <Text style={styles.muted}>Tap View All to create your first group.</Text>
         </View>
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingLeft: spacing.lg, paddingRight: spacing.md, gap: spacing.md }}>
           {groupsQuery.data?.map((group, idx) => {
-            const isPrimaryCard = idx === 0;
             const groupBalance = balancesQuery.data?.find((b) => b.group.id === group.id);
             const total = groupBalance?.balances?.reduce((s: number, b: any) => s + b.totalPaid, 0) ?? 0;
             return (
               <Pressable
                 key={group.id}
-                style={[styles.groupCard, isPrimaryCard ? styles.groupCardActive : styles.groupCardInactive]}
+                style={styles.groupCard}
                 onPress={() => router.push(`/(tabs)/groups/${group.id}`)}
               >
-                <Text style={[styles.groupCardTitle, isPrimaryCard ? styles.textWhite : styles.textDark]} numberOfLines={1}>
-                  {group.name}
-                </Text>
-                <Text style={[styles.groupCardSubtitle, isPrimaryCard ? styles.textWhiteMuted : styles.textGray]}>
-                  Total Expenses: ₹{(total || 0).toFixed(0)}
+                <View style={styles.groupCardTop}>
+                  <Text style={styles.groupCardTitle} numberOfLines={1}>
+                    {group.name}
+                  </Text>
+                  <ChevronRight color={colors.textMuted} size={16} />
+                </View>
+                <Text style={styles.groupCardSubtitle}>
+                  Total Pool: ₹{(total || 0).toFixed(0)}
                 </Text>
 
                 <View style={styles.groupCardFooter}>
@@ -198,18 +241,13 @@ export default function DashboardScreen() {
                         <Text style={styles.stackAvatarText}>{b.displayName?.slice(0, 1).toUpperCase()}</Text>
                       </View>
                     ))}
-                    <View style={[styles.stackAvatar, styles.stackAvatarMore, { marginLeft: -8 }]}>
-                      <Text style={styles.stackAvatarMoreText}>+4</Text>
-                    </View>
                   </View>
 
                   <Pressable
-                    style={[styles.addExpensesBtn, isPrimaryCard ? styles.addExpensesBtnWhite : styles.addExpensesBtnBlue]}
+                    style={styles.addExpensesBtn}
                     onPress={() => router.push({ pathname: "/(tabs)/add-expense", params: { groupId: group.id } })}
                   >
-                    <Text style={[styles.addExpensesBtnText, isPrimaryCard ? { color: colors.primary } : { color: colors.primary }]}>
-                      Add Expenses
-                    </Text>
+                    <Text style={styles.addExpensesBtnText}>+ Add</Text>
                   </Pressable>
                 </View>
               </Pressable>
@@ -218,9 +256,9 @@ export default function DashboardScreen() {
         </ScrollView>
       )}
 
-      {/* Recent Expenses Section */}
+      {/* Recent Expenses Timeline Section */}
       <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionTitle}>Recent Expenses</Text>
+        <Text style={styles.sectionTitle}>Recent Activity</Text>
         <Pressable onPress={() => router.push("/(tabs)/search")}>
           <Text style={styles.viewAll}>View All</Text>
         </Pressable>
@@ -236,15 +274,15 @@ export default function DashboardScreen() {
           return (
             <View key={e.id} style={[styles.expenseItem, !isLast && styles.expenseItemBorder]}>
               <View style={styles.expenseIconBadge}>
-                <Icon color={colors.textPrimary} size={18} strokeWidth={2} />
+                <Icon color={colors.primary} size={18} strokeWidth={2} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.expenseItemTitle}>{e.title}</Text>
                 <Text style={styles.expenseItemMeta}>
-                  {new Date(e.expenseDate).toLocaleDateString(undefined, { day: "numeric", month: "short" })} · Paid by {e.paidByDisplayName || "Member"}
+                  {new Date(e.expenseDate).toLocaleDateString(undefined, { day: "numeric", month: "short" })} · {e.groupName || "Group"}
                 </Text>
               </View>
-              <Text style={styles.expenseItemAmount}>-₹{Number(e.amount).toFixed(2)}</Text>
+              <Text style={styles.expenseItemAmount}>₹{Number(e.amount).toFixed(2)}</Text>
             </View>
           );
         })}
@@ -262,10 +300,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xl + 10,
   },
+  brandBadgeRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  brandIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   brandTitle: {
     fontFamily: fonts.extrabold,
     fontSize: 22,
-    color: colors.primary,
+    color: colors.textPrimary,
     letterSpacing: -0.5,
   },
   headerIcons: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
@@ -291,16 +338,87 @@ const styles = StyleSheet.create({
   greetingSection: { paddingHorizontal: spacing.lg, marginTop: spacing.md },
   hi: { ...typography.display, fontSize: 24, color: colors.textPrimary },
   subGreeting: { ...typography.bodyRegular, color: colors.textSecondary, marginTop: 2 },
+
+  /* Balance Card */
+  balanceCard: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md + 4,
+    backgroundColor: colors.primaryDeep,
+    borderRadius: 24,
+    padding: spacing.lg,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
+  },
+  balanceCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  balanceCardLabel: {
+    fontFamily: fonts.bold,
+    fontSize: 11,
+    color: "#94A3B8",
+    letterSpacing: 1,
+  },
+  netStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  badgePositive: { backgroundColor: "#065F46" },
+  badgeNegative: { backgroundColor: "#991B1B" },
+  netStatusText: { fontFamily: fonts.bold, fontSize: 11 },
+  textPositive: { color: "#34D399" },
+  textNegative: { color: "#FCA5A5" },
+  balanceAmountText: {
+    fontFamily: fonts.extrabold,
+    fontSize: 34,
+    color: "#FFFFFF",
+    marginVertical: 12,
+    letterSpacing: -1,
+  },
+  balanceBreakdownRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1E293B",
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: 4,
+  },
+  breakdownCol: { flex: 1, alignItems: "center" },
+  breakdownLabel: {
+    fontFamily: fonts.bold,
+    fontSize: 10,
+    color: "#94A3B8",
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  breakdownValue: {
+    fontFamily: fonts.bold,
+    fontSize: 15,
+  },
+  breakdownDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: "#334155",
+  },
+
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    backgroundColor: "#F1F5F9",
+    backgroundColor: colors.card,
     borderRadius: radius.pill,
     marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
+    marginTop: spacing.md + 4,
     paddingHorizontal: spacing.md,
     paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   searchPlaceholder: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 15 },
   quickAddContainer: {
@@ -311,11 +429,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
-    shadowColor: colors.textPrimary,
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
   },
   quickAddLabel: {
     fontFamily: fonts.bold,
@@ -330,13 +443,13 @@ const styles = StyleSheet.create({
   },
   quickAddTile: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: colors.bg,
     borderRadius: 16,
     paddingVertical: spacing.md - 2,
     paddingHorizontal: spacing.xs,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: colors.borderSubtle,
   },
   quickAddIconCircle: {
     width: 44,
@@ -360,25 +473,18 @@ const styles = StyleSheet.create({
   updateCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.primaryMuted,
+    backgroundColor: colors.primaryLight,
     borderRadius: 20,
     marginHorizontal: spacing.lg,
     marginTop: spacing.lg,
     padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primaryMuted,
   },
-  updateCardDemo: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.primaryMuted,
-    borderRadius: 20,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-    padding: spacing.md,
-  },
-  updateCardTag: { color: colors.primary, fontFamily: fonts.bold, fontSize: 11, textTransform: "uppercase", marginBottom: 2 },
+  updateCardTag: { color: colors.primary, fontFamily: fonts.bold, fontSize: 10, letterSpacing: 0.8, marginBottom: 2 },
   updateTitle: { color: colors.textPrimary, fontFamily: fonts.bold, fontSize: 15 },
   updateSubtitle: { color: colors.textSecondary, fontFamily: fonts.medium, fontSize: 13, marginTop: 2 },
-  settleButton: { backgroundColor: colors.warning, borderRadius: radius.pill, paddingHorizontal: 16, paddingVertical: 10 },
+  settleButton: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: 16, paddingVertical: 10 },
   settleButtonText: { color: colors.onDark, fontFamily: fonts.bold, fontSize: 13 },
   sectionHeaderRow: {
     flexDirection: "row",
@@ -398,47 +504,38 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     alignItems: "center",
     gap: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   emptyTitle: { color: colors.textPrimary, fontFamily: fonts.bold },
   groupCard: {
     width: 210,
-    borderRadius: 22,
+    borderRadius: 20,
     padding: spacing.md,
     justifyContent: "space-between",
-    minHeight: 140,
-    shadowColor: colors.textPrimary,
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    minHeight: 135,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  groupCardActive: { backgroundColor: colors.primary },
-  groupCardInactive: { backgroundColor: "#F1F5F9", borderWidth: 1, borderColor: colors.border },
-  groupCardTitle: { fontFamily: fonts.bold, fontSize: 16 },
-  groupCardSubtitle: { fontFamily: fonts.medium, fontSize: 12, marginTop: 4 },
-  textWhite: { color: colors.onDark },
-  textWhiteMuted: { color: "#FFFFFFCC" },
-  textDark: { color: colors.textPrimary },
-  textGray: { color: colors.textSecondary },
-  groupCardFooter: { gap: spacing.sm, marginTop: spacing.md },
+  groupCardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  groupCardTitle: { fontFamily: fonts.bold, fontSize: 15, color: colors.textPrimary, flex: 1 },
+  groupCardSubtitle: { fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  groupCardFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: spacing.md },
   avatarStack: { flexDirection: "row", alignItems: "center" },
   stackAvatar: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: colors.primaryMuted,
+    backgroundColor: colors.primaryLight,
     borderWidth: 2,
     borderColor: colors.card,
     alignItems: "center",
     justifyContent: "center",
   },
   stackAvatarText: { color: colors.primary, fontSize: 11, fontFamily: fonts.bold },
-  stackAvatarMore: { backgroundColor: colors.textMuted },
-  stackAvatarMoreText: { color: colors.onDark, fontSize: 10, fontFamily: fonts.bold },
-  addExpensesBtn: { borderRadius: radius.pill, paddingVertical: 10, alignItems: "center" },
-  addExpensesBtnWhite: { backgroundColor: colors.card },
-  addExpensesBtnBlue: { backgroundColor: colors.primaryMuted },
-  addExpensesBtnText: { fontFamily: fonts.bold, fontSize: 13 },
+  addExpensesBtn: { backgroundColor: colors.primaryLight, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6 },
+  addExpensesBtnText: { fontFamily: fonts.bold, fontSize: 12, color: colors.primary },
   expenseListCard: {
     marginHorizontal: spacing.lg,
     backgroundColor: colors.card,
@@ -448,12 +545,12 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   expenseItem: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.sm + 2 },
-  expenseItemBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  expenseItemBorder: { borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
   expenseIconBadge: {
     width: 42,
     height: 42,
     borderRadius: 14,
-    backgroundColor: "#F1F5F9",
+    backgroundColor: colors.primaryLight,
     alignItems: "center",
     justifyContent: "center",
   },

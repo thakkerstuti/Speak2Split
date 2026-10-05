@@ -157,6 +157,45 @@ npm run dev:mobile
 
 ---
 
+## 🎙️ Speech-to-Text Integration (Gnani Prisma v2.5)
+
+Speak2Split uses **Gnani Prisma v2.5** (`https://api.vachana.ai/stt/v3`) as the Speech-to-Text (STT) provider for the voice expense flow.
+
+### 1. How to Obtain a Gnani API Key
+1. Register/Sign in at the official Gnani portal ([api.vachana.ai](https://api.vachana.ai)).
+2. Generate an API key under your developer dashboard.
+3. Use the key in your backend `.env` file (`GNANI_API_KEY`). The API key is kept strictly on the backend and is never exposed to the mobile client.
+
+### 2. Required Backend Environment Variables
+Add the following to your backend `.env`:
+```env
+STT_PROVIDER=gnani
+GNANI_API_KEY=your_gnani_api_key_here
+GNANI_LANGUAGE_CODE=en-IN
+```
+*Note*: Initially configured for `en-IN`, with architecture supporting Indian languages like `hi-IN` (Hindi), `gu-IN` (Gujarati), `kn-IN` (Kannada), etc.
+
+### 3. How to Run the Backend
+```bash
+npm run dev:api
+```
+
+### 4. How to Test the Voice Expense Flow
+1. **Automated Unit Tests**:
+   ```bash
+   npm --prefix apps/api test
+   ```
+   Runs mocked tests verifying Gnani STT service, `X-API-Key-ID` header passing, language parameters, rate limits, error handling, and key sanitization without consuming real API credits.
+2. **Voice Expense Flow**:
+   - User taps Voice / Speak in the app or sends a POST request with an audio recording to `/voice/transcribe`.
+   - Backend sends audio to `https://api.vachana.ai/stt/v3` with `X-API-Key-ID`.
+   - Gnani Prisma v2.5 transcribes audio and returns the text transcript.
+   - The transcript is processed by the existing Speak2Split NLP expense parser (`/expenses/parse`).
+   - The expense creation and split calculation pipeline executes as normal.
+
+
+---
+
 ## 🌐 Production Deployment
 
 - **Backend Service**: Deployed on [Render](https://render.com) (`https://speak2split.onrender.com`)
