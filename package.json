@@ -2,6 +2,7 @@
   "name": "speak2split",
   "private": true,
   "version": "0.1.0",
+  "main": "index.js",
   "description": "Say it. Split it. Settle it. Context-aware shared expense management.",
   "workspaces": [
     "apps/*",

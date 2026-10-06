@@ -1,6 +1,6 @@
 import "react-native-gesture-handler";
 import { useEffect, useState } from "react";
-import { Slot, useRouter, useSegments, ErrorBoundary } from "expo-router";
+import { Slot, useRouter, useSegments, useRootNavigationState, ErrorBoundary } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
 import * as SecureStore from "expo-secure-store";
@@ -50,13 +50,14 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const { token, hasOnboarded, isHydrated, hydrate } = useAuthStore();
   const segments = useSegments();
   const router = useRouter();
+  const rootNavigationState = useRootNavigationState();
 
   useEffect(() => {
     hydrate().catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (!isHydrated) return;
+    if (!isHydrated || !rootNavigationState?.key) return;
     const inAuthGroup = segments[0] === "(auth)";
     const onOnboarding = segments[0] === "onboarding";
 
@@ -72,12 +73,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       } catch (e) {
         console.warn("Navigation router error:", e);
       }
-    }, 1);
+    }, 10);
 
     return () => clearTimeout(timer);
-  }, [token, isHydrated, hasOnboarded, segments]);
+  }, [token, isHydrated, hasOnboarded, segments, rootNavigationState?.key]);
 
-  if (!isHydrated) {
+  if (!isHydrated || !rootNavigationState?.key) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
         <ActivityIndicator color={colors.primary} />

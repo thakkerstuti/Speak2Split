@@ -15,7 +15,7 @@
       "bundleIdentifier": "com.speak2split.app"
     },
     "android": {
-      "package": "com.stuti19.speak2split"
+      "package": "com.stuti21.speak2split"
     },
     "extra": {
       "router": {
