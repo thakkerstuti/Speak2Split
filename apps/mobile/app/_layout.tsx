@@ -58,30 +58,32 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isHydrated || !rootNavigationState?.key) return;
-    const inAuthGroup = segments[0] === "(auth)";
-    const onOnboarding = segments[0] === "onboarding";
 
-    const timer = setTimeout(() => {
-      try {
-        if (!hasOnboarded && !onOnboarding) {
+    const currentSegment = (segments && segments[0]) ? segments[0] : "";
+
+    try {
+      if (!hasOnboarded) {
+        if (currentSegment !== "onboarding") {
           router.replace("/onboarding");
-        } else if (hasOnboarded && !token && !inAuthGroup) {
+        }
+      } else if (!token) {
+        if (currentSegment !== "(auth)") {
           router.replace("/(auth)/login");
-        } else if (token && segments[0] !== "(tabs)") {
+        }
+      } else {
+        if (currentSegment !== "(tabs)") {
           router.replace("/(tabs)");
         }
-      } catch (e) {
-        console.warn("Navigation router error:", e);
       }
-    }, 10);
-
-    return () => clearTimeout(timer);
+    } catch (e) {
+      console.warn("Navigation router error:", e);
+    }
   }, [token, isHydrated, hasOnboarded, segments, rootNavigationState?.key]);
 
   if (!isHydrated || !rootNavigationState?.key) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
-        <ActivityIndicator color={colors.primary} />
+        <ActivityIndicator color={colors.primary} size="large" />
       </View>
     );
   }
@@ -118,17 +120,19 @@ export default function RootLayout() {
   if (!fontsLoaded && !fontError && !forceReady) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
-        <ActivityIndicator color={colors.primary} />
+        <ActivityIndicator color={colors.primary} size="large" />
       </View>
     );
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <StatusBar style="dark" />
-      <AuthGate>
-        <Slot />
-      </AuthGate>
-    </QueryClientProvider>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <QueryClientProvider client={queryClient}>
+        <StatusBar style="dark" />
+        <AuthGate>
+          <Slot />
+        </AuthGate>
+      </QueryClientProvider>
+    </View>
   );
 }

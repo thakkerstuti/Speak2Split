@@ -1,12 +1,29 @@
 {
   "expo": {
-    "extra": {
-      "eas": {
-        "projectId": "6f08465e-978d-4a00-85a5-e3434596a4c1"
-      }
+    "name": "Speak2Split",
+    "slug": "speak2split",
+    "owner": "stuti21",
+    "scheme": "speak2split",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+      "expo-router"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.speak2split.app"
     },
     "android": {
       "package": "com.stuti21.speak2split"
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "6f08465e-978d-4a00-85a5-e3434596a4c1"
+      }
     }
   }
 }
