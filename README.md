@@ -35,7 +35,7 @@ Whether managing flatmate utility bills, splitting group trip expenses, or keepi
 - 📸 **Receipt OCR Scanning**: Upload photo receipts to extract merchant names, total amounts, itemized lists, and categories automatically.
 - ⚡ **Real-Time Group Synchronization**: Powered by Socket.IO for instant live balance and expense updates across all group members' devices.
 - 🎨 **Premium Modern UI/UX**: Designed with a sleek aesthetic, Plus Jakarta Sans geometric typography, category emoji badges, soft pill buttons, and color-coded balances (Green for positive, Coral Red for owed).
-- 🔐 **Multi-Provider Authentication**: Support for Google OAuth, Apple Sign-In, and Email/Password with secure JWT tokens.
+- 🔐 **Multi-Provider Authentication**: Support for Google OAuth (fully configured for Android intents and Web), Apple Sign-In, and Email/Password with secure JWT tokens.
 - 📊 **Smart Debt Minimization**: Built-in settlement algorithm calculates the optimal minimum number of peer-to-peer payments needed to settle group debts completely.
 - 📄 **PDF Financial Reports**: Instant PDF export with branded headers, member summary tables, itemized expense histories, and settlement instructions.
 - 🔔 **Multi-Channel Notifications**: Real-time in-app alerts, Expo Push Notifications, Email (Resend), and WhatsApp message integration.
