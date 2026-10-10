@@ -80,19 +80,33 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     }
   }, [token, isHydrated, hasOnboarded, segments, rootNavigationState?.key]);
 
-  if (!isHydrated || !rootNavigationState?.key) {
-    return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
-        <ActivityIndicator color={colors.primary} size="large" />
-      </View>
-    );
-  }
+  const isReady = isHydrated && !!rootNavigationState?.key;
 
+  // The navigator (children = <Slot />) must ALWAYS be mounted. The root
+  // navigation key only appears after a navigator mounts, so the loading
+  // spinner is an overlay on top of it, not a replacement for it.
   return (
-    <>
-      <RealtimeLifecycle token={token} />
+    <View style={{ flex: 1 }}>
+      {isHydrated ? <RealtimeLifecycle token={token} /> : null}
       {children}
-    </>
+      {!isReady ? (
+        <View
+          pointerEvents="auto"
+          style={{
+            position: "absolute",
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: colors.bg,
+          }}
+        >
+          <ActivityIndicator color={colors.primary} size="large" />
+        </View>
+      ) : null}
+    </View>
   );
 }
 

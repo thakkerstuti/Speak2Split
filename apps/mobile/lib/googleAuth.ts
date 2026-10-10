@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import * as Google from "expo-auth-session/providers/google";
 import { makeRedirectUri } from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
-import { Alert } from "react-native";
+import { Alert, Platform } from "react-native";
 import { authApi } from "./api";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -24,7 +24,7 @@ export function useGoogleAuth(onIdToken: (idToken: string) => void) {
           setServerClientId(cfg.googleWebClientId);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || serverClientId;
@@ -35,12 +35,19 @@ export function useGoogleAuth(onIdToken: (idToken: string) => void) {
 
   const redirectUri = NATIVE_REDIRECT_URI;
 
+  // expo-auth-session throws during render if no client id exists, which
+  // crashes the login screen. Use an inert placeholder; it is never used for a
+  // real prompt because isConfigured/triggerPrompt block that case.
+  const PLACEHOLDER_CLIENT_ID = "google-client-id-not-configured";
+
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: webClientId || androidClientId || undefined,
+    clientId: webClientId || androidClientId || PLACEHOLDER_CLIENT_ID,
     webClientId: webClientId || undefined,
-    androidClientId: androidClientId || undefined,
+    androidClientId: androidClientId || webClientId || PLACEHOLDER_CLIENT_ID,
     iosClientId: iosClientId || undefined,
-    redirectUri,
+    // Let expo-auth-session use its default on Android:
+    // "<applicationId>:/oauthredirect" (com.stuti21.speak2split:/oauthredirect)
+    redirectUri: Platform.OS === "android" ? undefined : redirectUri,
   });
 
   useEffect(() => {
@@ -68,7 +75,7 @@ export function useGoogleAuth(onIdToken: (idToken: string) => void) {
           setServerClientId(cfg.googleWebClientId);
           activeId = cfg.googleWebClientId;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (!activeId) {
