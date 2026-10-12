@@ -145,6 +145,12 @@ async function linkOrCreateUserForProvider(
   if (email && emailVerified) {
     const existingUser = await UserModel.findOne({ email: email.toLowerCase() });
     if (existingUser) {
+      // Older/partial user documents may lack required fields such as displayName.
+      // save() re-validates the whole document, so fill it in first; otherwise the
+      // request fails with "User validation failed: displayName is required".
+      if (!existingUser.displayName) {
+        existingUser.displayName = displayName || email.split("@")[0] || `${provider} User`;
+      }
       existingUser.authAccounts.push({ provider, providerUserId, createdAt: new Date() });
       await existingUser.save();
       return existingUser;
@@ -178,17 +184,24 @@ authRouter.post("/google", async (req: Request, res: Response) => {
     throw err;
   }
 
-  const user = await linkOrCreateUserForProvider(
-    "GOOGLE",
-    identity.googleUserId,
-    identity.email,
-    identity.emailVerified,
-    identity.name,
-    identity.avatarUrl
-  );
+  try {
+    const user = await linkOrCreateUserForProvider(
+      "GOOGLE",
+      identity.googleUserId,
+      identity.email,
+      identity.emailVerified,
+      identity.name,
+      identity.avatarUrl
+    );
 
-  const token = jwt.sign({ sub: String(user._id) }, JWT_SECRET, { expiresIn: "30d" });
-  return res.json({ token, user: { id: String(user._id), email: user.email, displayName: user.displayName } });
+    const token = jwt.sign({ sub: String(user._id) }, JWT_SECRET, { expiresIn: "30d" });
+    return res.json({ token, user: { id: String(user._id), email: user.email, displayName: user.displayName } });
+  } catch (err) {
+    // Express 4 does not forward async errors to the error middleware; an uncaught
+    // rejection here would crash the whole server process.
+    console.error("Google sign-in failed while linking/creating the user:", err);
+    return res.status(500).json({ error: "Google sign-in failed on the server. Please try again." });
+  }
 });
 
 const appleAuthSchema = z.object({
