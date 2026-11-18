@@ -6,9 +6,11 @@ import { UserModel } from "../db/models/User";
 import { ContactModel } from "../db/models/Contact";
 import { ActivityEventModel } from "../db/models/ActivityEvent";
 import { AuthedRequest, requireAuth } from "../auth/auth.router";
+import { isObjectIdString, objectId, validateObjectIdParams } from "../validation";
 
 export const groupsRouter = Router();
 groupsRouter.use(requireAuth);
+validateObjectIdParams(groupsRouter, "groupId");
 
 const createGroupSchema = z.object({
   name: z.string().min(1),
@@ -79,7 +81,19 @@ groupsRouter.get("/:groupId", async (req: AuthedRequest, res: Response) => {
   return res.json({ ...group.toJSON(), members });
 });
 
-const addMemberSchema = z.object({ email: z.string().email() });
+// Add by email (any registered user), or by userId — the latter only for
+// people the requester already knows (a contact of theirs, or someone they
+// share another group with), which is what the voice flow uses when a
+// mentioned contact isn't in the chosen group yet.
+const addMemberSchema = z.union([z.object({ email: z.string().email() }), z.object({ userId: objectId })]);
+
+async function requesterKnowsUser(requesterId: string, targetUserId: string): Promise<boolean> {
+  const contact = await ContactModel.exists({ ownerUserId: requesterId, targetUserId });
+  if (contact) return true;
+  const myGroups = await GroupMemberModel.find({ userId: requesterId, status: "ACTIVE" }).distinct("groupId");
+  const shared = await GroupMemberModel.exists({ userId: targetUserId, status: "ACTIVE", groupId: { $in: myGroups } });
+  return !!shared;
+}
 
 groupsRouter.post("/:groupId/members", async (req: AuthedRequest, res: Response) => {
   const isMember = await assertMembership(req.params.groupId, req.userId!);
@@ -88,11 +102,20 @@ groupsRouter.post("/:groupId/members", async (req: AuthedRequest, res: Response)
   const parsed = addMemberSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
 
-  const newMember = await UserModel.findOne({ email: parsed.data.email.toLowerCase() });
-  if (!newMember) {
-    return res.status(404).json({
-      error: "No Speak2Split account found for this email yet. Send them an invite link instead.",
-    });
+  let newMember;
+  if ("email" in parsed.data) {
+    newMember = await UserModel.findOne({ email: parsed.data.email.toLowerCase(), isActive: true });
+    if (!newMember) {
+      return res.status(404).json({
+        error: "No Speak2Split account found for this email yet. Ask them to sign up first.",
+      });
+    }
+  } else {
+    if (!(await requesterKnowsUser(req.userId!, parsed.data.userId))) {
+      return res.status(403).json({ error: "You can only add people from your contacts or groups by name." });
+    }
+    newMember = await UserModel.findOne({ _id: parsed.data.userId, isActive: true });
+    if (!newMember) return res.status(404).json({ error: "User not found" });
   }
 
   await GroupMemberModel.findOneAndUpdate(
@@ -124,7 +147,7 @@ groupsRouter.post("/:groupId/members", async (req: AuthedRequest, res: Response)
 });
 
 export async function assertMembership(groupId: string, userId: string): Promise<boolean> {
-  if (!mongoose.isValidObjectId(groupId)) return false;
+  if (!isObjectIdString(groupId) || !isObjectIdString(userId)) return false;
   const membership = await GroupMemberModel.findOne({ groupId, userId, status: "ACTIVE" });
   return !!membership;
 }

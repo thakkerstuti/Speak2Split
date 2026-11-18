@@ -7,17 +7,17 @@ import { SettlementModel } from "../db/models/Settlement";
 import { RecurringExpenseModel } from "../db/models/RecurringExpense";
 import { UserModel } from "../db/models/User";
 import { AuthedRequest, requireAuth } from "../auth/auth.router";
-import { objectId } from "../validation";
+import { escapeRegex, objectId } from "../validation";
 
 export const searchRouter = Router();
 searchRouter.use(requireAuth);
 
 const searchSchema = z.object({
-  q: z.string().min(1),
+  q: z.string().trim().min(1).max(100),
   groupId: objectId.optional(),
   minAmount: z.coerce.number().optional(),
   maxAmount: z.coerce.number().optional(),
-  category: z.string().optional(),
+  category: z.string().max(50).optional(),
   dateFrom: z.string().datetime().optional(),
   dateTo: z.string().datetime().optional(),
 });
@@ -33,7 +33,10 @@ searchRouter.get("/", async (req: AuthedRequest, res: Response) => {
   const parsed = searchSchema.safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
   const { q, groupId, minAmount, maxAmount, category, dateFrom, dateTo } = parsed.data;
-  const regex = new RegExp(q, "i");
+  // User input is escaped so it is always matched literally — never compiled
+  // as a pattern (malformed patterns used to crash the server; long ones
+  // could also cause catastrophic backtracking).
+  const regex = new RegExp(escapeRegex(q), "i");
 
   const memberships = await GroupMemberModel.find({ userId: req.userId, status: "ACTIVE" }).lean();
   let myGroupIds = memberships.map((m) => String(m.groupId));
@@ -55,7 +58,7 @@ searchRouter.get("/", async (req: AuthedRequest, res: Response) => {
       ...(maxAmount !== undefined ? { $lte: maxAmount } : {}),
     };
   }
-  if (category) expenseFilter.category = new RegExp(category, "i");
+  if (category) expenseFilter.category = new RegExp(escapeRegex(category), "i");
   if (dateFrom || dateTo) {
     expenseFilter.expenseDate = {
       ...(dateFrom ? { $gte: new Date(dateFrom) } : {}),

@@ -130,6 +130,9 @@ export const groupsApi = {
   detail: (groupId: string) => api.get<GroupDetail>(`/groups/${groupId}`).then((r) => r.data),
   addMember: (groupId: string, email: string) =>
     api.post(`/groups/${groupId}/members`, { email }).then((r) => r.data),
+  /** Adds someone the user already knows (a contact or co-member elsewhere). */
+  addMemberById: (groupId: string, userId: string) =>
+    api.post(`/groups/${groupId}/members`, { userId }).then((r) => r.data),
 };
 
 export const expensesApi = {

@@ -2,9 +2,11 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import { NotificationModel, NotificationPreferenceModel, NotificationDeviceModel } from "../db/models/Notification";
 import { AuthedRequest, requireAuth } from "../auth/auth.router";
+import { validateObjectIdParams } from "../validation";
 
 export const notificationsRouter = Router();
 notificationsRouter.use(requireAuth);
+validateObjectIdParams(notificationsRouter, "id");
 
 notificationsRouter.get("/", async (req: AuthedRequest, res: Response) => {
   const notifications = await NotificationModel.find({ userId: req.userId })

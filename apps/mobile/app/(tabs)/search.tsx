@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Search as SearchIcon } from "lucide-react-native";
 import { searchApi, SearchResults } from "../../lib/api";
 import { colors, spacing, radius, typography } from "../../lib/theme";
+import { ScreenHeader } from "../../components/ui";
 
 type SectionKey = keyof SearchResults;
 
@@ -43,8 +44,8 @@ export default function SearchScreen() {
 
   return (
     <View style={styles.container}>
+      <ScreenHeader title="Search" large={false} onBack={() => (router.canGoBack() ? router.back() : router.replace("/(tabs)"))} />
       <View style={styles.header}>
-        <Text style={styles.title}>Search</Text>
         <View style={styles.searchBar}>
           <SearchIcon color={colors.textMuted} size={18} />
           <TextInput
@@ -139,7 +140,7 @@ export default function SearchScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  header: { paddingHorizontal: spacing.lg, paddingTop: spacing.xxl + 8 },
+  header: { paddingHorizontal: spacing.lg },
   title: { ...typography.display, fontSize: 26, color: colors.textPrimary, marginBottom: spacing.md },
   searchBar: {
     flexDirection: "row",

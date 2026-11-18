@@ -4,11 +4,12 @@ import { ShoppingListModel } from "../db/models/ShoppingList";
 import { UserModel } from "../db/models/User";
 import { AuthedRequest, requireAuth } from "../auth/auth.router";
 import { assertMembership } from "../groups/groups.router";
-import { objectId } from "../validation";
+import { objectId, validateObjectIdParams } from "../validation";
 import { broadcastToGroup } from "../realtime/socket";
 
 export const shoppingRouter = Router();
 shoppingRouter.use(requireAuth);
+validateObjectIdParams(shoppingRouter, "groupId", "id");
 
 async function withAssigneeNames(list: any) {
   const userIds = [...new Set(list.items.flatMap((i: any) => [i.assignedToId, i.addedById].filter(Boolean).map(String)))];

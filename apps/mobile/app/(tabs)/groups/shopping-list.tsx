@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, TextInput, Alert, ActivityIndicator } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Plus, Check } from "lucide-react-native";
 import { shoppingApi, ShoppingItem } from "../../../lib/api";
 import { useGroupRealtime } from "../../../lib/useGroupRealtime";
 import { colors, spacing, radius, typography } from "../../../lib/theme";
+import { ScreenHeader } from "../../../components/ui";
 
 export default function ShoppingListScreen() {
+  const router = useRouter();
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const queryClient = useQueryClient();
   const [newItemName, setNewItemName] = useState("");
@@ -62,9 +64,7 @@ export default function ShoppingListScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{list?.name ?? "Shopping List"}</Text>
-      </View>
+      <ScreenHeader title={list?.name ?? "Shopping list"} large={false} onBack={() => router.back()} />
 
       <View style={styles.addRow}>
         <TextInput

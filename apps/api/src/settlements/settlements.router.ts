@@ -7,13 +7,14 @@ import { GroupMemberModel } from "../db/models/Group";
 import { UserModel } from "../db/models/User";
 import { AuthedRequest, requireAuth } from "../auth/auth.router";
 import { assertMembership } from "../groups/groups.router";
-import { objectId } from "../validation";
+import { objectId, validateObjectIdParams } from "../validation";
 import { computeSettlementPlan, LedgerLine } from "@speak2split/shared";
 import { broadcastToGroup } from "../realtime/socket";
 import { notify } from "../notifications/notification.service";
 
 export const settlementsRouter = Router();
 settlementsRouter.use(requireAuth);
+validateObjectIdParams(settlementsRouter, "groupId", "settlementId");
 
 /** GET /settlements/group/:groupId/balances — live balances + minimized settlement plan */
 settlementsRouter.get("/group/:groupId/balances", async (req: AuthedRequest, res: Response) => {
@@ -86,6 +87,14 @@ settlementsRouter.post("/", async (req: AuthedRequest, res: Response) => {
   const isMember = await assertMembership(groupId, req.userId!);
   if (!isMember) return res.status(403).json({ error: "Not a member of this group" });
 
+  if (toUserId === req.userId) {
+    return res.status(400).json({ error: "You can't record a payment to yourself" });
+  }
+  // The recipient must be an active member of the same group.
+  if (!(await assertMembership(groupId, toUserId))) {
+    return res.status(400).json({ error: "The person you're paying isn't an active member of this group", code: "NOT_A_MEMBER" });
+  }
+
   const settlement = await SettlementModel.create({
     groupId,
     fromUserId: req.userId,
@@ -106,6 +115,13 @@ settlementsRouter.post("/:settlementId/complete", async (req: AuthedRequest, res
 
   const isMember = await assertMembership(String(settlement.groupId), req.userId!);
   if (!isMember) return res.status(403).json({ error: "Not a member of this group" });
+
+  // Only the two parties to the payment may mark it complete — not any other
+  // group member.
+  const isParty = String(settlement.fromUserId) === req.userId || String(settlement.toUserId) === req.userId;
+  if (!isParty) {
+    return res.status(403).json({ error: "Only the payer or the recipient can complete this settlement" });
+  }
 
   if (settlement.status !== "PENDING") {
     return res.status(409).json({ error: `Settlement is already ${settlement.status}` });

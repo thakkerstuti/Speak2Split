@@ -3,11 +3,13 @@ import multer from "multer";
 import { DocumentModel } from "../db/models/Document";
 import { UserModel } from "../db/models/User";
 import { AuthedRequest, requireAuth } from "../auth/auth.router";
+import { validateObjectIdParams } from "../validation";
 import { assertMembership } from "../groups/groups.router";
 import { saveFile, readFile, deleteFile } from "./storage";
 
 export const documentsRouter = Router();
 documentsRouter.use(requireAuth);
+validateObjectIdParams(documentsRouter, "groupId", "id");
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_SIZE } });

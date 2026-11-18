@@ -203,10 +203,10 @@ GEMINI_STT_MODEL=gemini-2.5-flash
 All keys stay on the backend and are never sent to the mobile app.
 
 ### How it works
-1. The user picks a group, taps **Voice** and records; the app uploads the audio (m4a / mp4 / wav) to `/voice/transcribe`.
+1. The user taps the center **Speak** button (no group selection needed) and talks; recording stops automatically when they finish, and the app uploads the audio (m4a / mp4 / wav) to `/voice/transcribe`.
 2. AssemblyAI: the audio is uploaded (`POST /v2/upload`), a Universal-2 job is submitted (`POST /v2/transcript`), and the job is polled (`queued → processing → completed | error`) for up to `ASSEMBLYAI_MAX_WAIT_MS`. Transient poll errors are retried at most 3 times.
 3. On any AssemblyAI failure the backend tries Groq, then Gemini.
-4. The response is always `{ transcript, languageDetected? }`. The app sends the transcript to `/expenses/parse`; the user resolves ambiguous names, edits the draft, and confirms to save.
+4. The response is always `{ transcript, languageDetected? }`. The app sends the transcript to `/expenses/parse` without a group; the server infers the group (spoken group name, then the people mentioned, then recency). The user reviews one card (group, amount, title, category, payer, per-person split), resolves any ambiguous names, and saves.
 
 ### Testing
 ```bash

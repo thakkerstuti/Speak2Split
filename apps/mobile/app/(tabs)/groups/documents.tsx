@@ -1,14 +1,16 @@
 import { useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, Alert, ActivityIndicator, Linking } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import * as DocumentPicker from "expo-document-picker";
 import { FileText, Upload, Trash2 } from "lucide-react-native";
 import { api, documentsApi } from "../../../lib/api";
 import { useAuthStore } from "../../../store/auth-store";
 import { colors, spacing, radius, typography } from "../../../lib/theme";
+import { IconButton, ScreenHeader } from "../../../components/ui";
 
 export default function DocumentsScreen() {
+  const router = useRouter();
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const queryClient = useQueryClient();
   const authToken = useAuthStore((s) => s.token);
@@ -56,12 +58,14 @@ export default function DocumentsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Documents</Text>
-        <Pressable style={styles.uploadButton} onPress={pickAndUpload} disabled={uploading}>
-          {uploading ? <ActivityIndicator color={colors.bg} size="small" /> : <Upload color={colors.bg} size={18} />}
-        </Pressable>
-      </View>
+      <ScreenHeader
+        title="Documents"
+        large={false}
+        onBack={() => router.back()}
+        right={
+          uploading ? <ActivityIndicator color={colors.primary} /> : <IconButton icon={Upload} label="Upload document" onPress={pickAndUpload} />
+        }
+      />
 
       {docsQuery.isLoading && <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xl }} />}
 

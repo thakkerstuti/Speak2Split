@@ -5,12 +5,14 @@ import { UserModel } from "../db/models/User";
 import { ExpenseModel } from "../db/models/Expense";
 import { SettlementModel } from "../db/models/Settlement";
 import { AuthedRequest, requireAuth } from "../auth/auth.router";
+import { validateObjectIdParams } from "../validation";
 import { assertMembership } from "../groups/groups.router";
 import { computeSettlementPlan, LedgerLine } from "@speak2split/shared";
 import mongoose from "mongoose";
 
 export const exportsRouter = Router();
 exportsRouter.use(requireAuth);
+validateObjectIdParams(exportsRouter, "groupId");
 
 const ACCENT = "#7C6CFF";
 const MUTED = "#6B6B7A";

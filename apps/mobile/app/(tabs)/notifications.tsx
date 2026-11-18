@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { Settings, ChevronLeft, Home, Receipt, HandCoins, Users2, BarChart3, Bell, CheckCircle2, RefreshCw } from "lucide-react-native";
 import { notificationsApi, Notification } from "../../lib/api";
 import { colors, spacing, radius, typography, fonts } from "../../lib/theme";
+import { IconButton, ScreenHeader } from "../../components/ui";
 
 const NOTIFICATION_TYPES = [
   "EXPENSE_ADDED", "SETTLEMENT_CREATED", "SETTLEMENT_COMPLETED", "GROUP_INVITATION",
@@ -135,15 +136,12 @@ export default function NotificationsScreen() {
   return (
     <View style={styles.container}>
       {/* Top Header Bar */}
-      <View style={styles.header}>
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <ChevronLeft color={colors.textPrimary} size={22} />
-        </Pressable>
-        <Text style={styles.title}>Notification</Text>
-        <Pressable style={styles.iconButton} onPress={() => setPrefsVisible(true)}>
-          <Settings color={colors.textSecondary} size={18} />
-        </Pressable>
-      </View>
+      <ScreenHeader
+        title="Notifications"
+        large={false}
+        onBack={() => (router.canGoBack() ? router.back() : router.replace("/(tabs)"))}
+        right={<IconButton icon={Settings} label="Notification settings" onPress={() => setPrefsVisible(true)} />}
+      />
 
       {unreadCount > 0 && (
         <Pressable style={styles.markAllRow} onPress={() => markAllReadMutation.mutate()}>

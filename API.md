@@ -42,7 +42,7 @@ success.
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/expenses` | Server computes the split via `calculateSplit()` — client totals are re-validated, never trusted |
-| POST | `/expenses/parse` | `{ groupId, utterance }` — NLP extraction + name resolution; returns a draft only, never creates an expense |
+| POST | `/expenses/parse` | `{ utterance, groupId? }` — NLP extraction + name resolution; returns a draft only, never creates an expense. If `groupId` is omitted the group is inferred (spoken group name > mentioned members > most recent activity) and returned as `groupId`, `groupName` and `groupInference: { inferred, confidence, reason, alternatives }`. 422 `NO_GROUPS` if the user has no groups |
 | GET | `/expenses/group/:groupId` | Expense list with payers/participants |
 
 ## Name resolution (`/resolve-names`)

@@ -5,6 +5,7 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { UserPlus, RefreshCw } from "lucide-react-native";
 import { contactsApi } from "../../lib/api";
 import { colors, spacing, radius, typography } from "../../lib/theme";
+import { IconButton, ScreenHeader } from "../../components/ui";
 
 /**
  * Contact permission is entirely optional (per spec). The app works fully
@@ -79,17 +80,16 @@ export default function PeopleScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>People</Text>
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <Pressable style={styles.iconButton} onPress={syncContacts} disabled={syncing}>
-            {syncing ? <ActivityIndicator color={colors.accent} /> : <RefreshCw color={colors.accent} size={20} />}
-          </Pressable>
-          <Pressable style={styles.iconButton} onPress={() => setAddModalVisible(true)}>
-            <UserPlus color={colors.accent} size={20} />
-          </Pressable>
-        </View>
-      </View>
+      <ScreenHeader
+        title="People"
+        subtitle="Used to match names when you speak"
+        right={
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            {syncing ? <ActivityIndicator color={colors.primary} /> : <IconButton icon={RefreshCw} label="Sync phone contacts" onPress={syncContacts} />}
+            <IconButton icon={UserPlus} label="Add person" onPress={() => setAddModalVisible(true)} />
+          </View>
+        }
+      />
 
       {permissionDenied && (
         <View style={styles.noticeCard}>

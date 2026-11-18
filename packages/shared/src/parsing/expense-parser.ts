@@ -75,6 +75,9 @@ JSON schema:
   "ambiguityNotes": string[]
 }`;
 
+/** Current stable, free-tier Gemini model (Google's named replacement for 2.5 Flash). */
+export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
+
 export interface LlmClient {
   /** Returns the raw text content of the model's response. */
   complete(system: string, userMessage: string): Promise<string>;
@@ -92,11 +95,14 @@ export class MultiProviderLlmClient implements LlmClient {
     const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
     if (geminiKey) {
       try {
+        // gemini-1.5-flash has been shut down; GEMINI_MODEL overrides the default.
+        const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
           {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            // Key in a header, never in the URL (URLs end up in logs).
+            headers: { "content-type": "application/json", "x-goog-api-key": geminiKey },
             body: JSON.stringify({
               contents: [{ parts: [{ text: `${system}\n\nUser input: ${userMessage}` }] }],
               generationConfig: { responseMimeType: "application/json" },
@@ -109,7 +115,7 @@ export class MultiProviderLlmClient implements LlmClient {
           if (text) return text;
         } else {
           const errText = await res.text();
-          errors.push(`Gemini HTTP ${res.status}: ${errText}`);
+          errors.push(`Gemini HTTP ${res.status}: ${errText.split(geminiKey).join("***").slice(0, 300)}`);
         }
       } catch (err: any) {
         errors.push(`Gemini error: ${err?.message}`);

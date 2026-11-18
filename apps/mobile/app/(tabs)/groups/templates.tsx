@@ -5,6 +5,7 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Plus, Zap } from "lucide-react-native";
 import { templatesApi, expensesApi, ExpenseTemplate } from "../../../lib/api";
 import { colors, spacing, radius, typography } from "../../../lib/theme";
+import { IconButton, ScreenHeader } from "../../../components/ui";
 
 export default function TemplatesScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
@@ -82,12 +83,12 @@ export default function TemplatesScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Templates</Text>
-        <Pressable style={styles.addButton} onPress={() => setCreateVisible(true)}>
-          <Plus color={colors.bg} size={20} />
-        </Pressable>
-      </View>
+      <ScreenHeader
+        title="Templates"
+        large={false}
+        onBack={() => router.back()}
+        right={<IconButton icon={Plus} label="New template" onPress={() => setCreateVisible(true)} />}
+      />
 
       {templatesQuery.isLoading && <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xl }} />}
 

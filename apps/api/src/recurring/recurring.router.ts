@@ -1,13 +1,15 @@
 import { Router, Response } from "express";
 import { z } from "zod";
 import { RecurringExpenseModel } from "../db/models/RecurringExpense";
+import { GroupMemberModel } from "../db/models/Group";
 import { AuthedRequest, requireAuth } from "../auth/auth.router";
 import { assertMembership } from "../groups/groups.router";
-import { objectId } from "../validation";
+import { objectId, validateObjectIdParams } from "../validation";
 import { calculateSplit, SplitValidationError } from "@speak2split/shared";
 
 export const recurringRouter = Router();
 recurringRouter.use(requireAuth);
+validateObjectIdParams(recurringRouter, "groupId", "id");
 
 const createSchema = z.object({
   groupId: objectId,
@@ -64,6 +66,19 @@ recurringRouter.post("/", async (req: AuthedRequest, res: Response) => {
 
   const isMember = await assertMembership(input.groupId, req.userId!);
   if (!isMember) return res.status(403).json({ error: "Not a member of this group" });
+
+  // Every payer/participant must already be an active member of the group.
+  const memberIds = new Set(
+    (await GroupMemberModel.find({ groupId: input.groupId, status: "ACTIVE" }).lean()).map((m) => String(m.userId))
+  );
+  const outsider = [...input.payers, ...input.participants].find((p) => !memberIds.has(p.userId));
+  if (outsider) {
+    return res.status(400).json({
+      error: "Everyone who pays or splits a recurring expense must be a member of this group.",
+      code: "NOT_A_MEMBER",
+      userId: outsider.userId,
+    });
+  }
 
   // Validate the split configuration up front using the same engine that
   // will run at generation time, so a bad config is rejected at creation,

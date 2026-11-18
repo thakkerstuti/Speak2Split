@@ -5,10 +5,11 @@ import { GroupMemberModel } from "../db/models/Group";
 import { UserModel } from "../db/models/User";
 import { AuthedRequest, requireAuth } from "../auth/auth.router";
 import { assertMembership } from "../groups/groups.router";
-import { objectId } from "../validation";
+import { isObjectIdString, objectId, validateObjectIdParams } from "../validation";
 
 export const templatesRouter = Router();
 templatesRouter.use(requireAuth);
+validateObjectIdParams(templatesRouter, "id");
 
 const createTemplateSchema = z.object({
   groupId: objectId.optional(),
@@ -45,6 +46,7 @@ templatesRouter.post("/", async (req: AuthedRequest, res: Response) => {
 
 templatesRouter.get("/", async (req: AuthedRequest, res: Response) => {
   const groupId = typeof req.query.groupId === "string" ? req.query.groupId : undefined;
+  if (groupId !== undefined && !isObjectIdString(groupId)) return res.status(400).json({ error: "Invalid groupId" });
   if (groupId) {
     const isMember = await assertMembership(groupId, req.userId!);
     if (!isMember) return res.status(403).json({ error: "Not a member of this group" });
@@ -67,6 +69,9 @@ templatesRouter.patch("/:id", async (req: AuthedRequest, res: Response) => {
 
   const parsed = updateTemplateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
+  if (parsed.data.groupId && !(await assertMembership(parsed.data.groupId, req.userId!))) {
+    return res.status(403).json({ error: "Not a member of this group" });
+  }
 
   Object.assign(existing, parsed.data);
   await existing.save();
@@ -91,6 +96,7 @@ templatesRouter.delete("/:id", async (req: AuthedRequest, res: Response) => {
 templatesRouter.get("/:id/resolve", async (req: AuthedRequest, res: Response) => {
   const groupId = typeof req.query.groupId === "string" ? req.query.groupId : undefined;
   if (!groupId) return res.status(400).json({ error: "groupId query parameter is required" });
+  if (!isObjectIdString(groupId)) return res.status(400).json({ error: "Invalid groupId" });
 
   const isMember = await assertMembership(groupId, req.userId!);
   if (!isMember) return res.status(403).json({ error: "Not a member of this group" });

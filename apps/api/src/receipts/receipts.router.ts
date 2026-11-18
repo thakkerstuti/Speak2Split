@@ -2,7 +2,13 @@ import { Router, Response } from "express";
 import multer from "multer";
 import { AuthedRequest, requireAuth } from "../auth/auth.router";
 import { assertMembership } from "../groups/groups.router";
-import { runOcr, OcrNotConfiguredError, OcrError } from "./ocr";
+import { runOcr, OcrNotConfiguredError, OcrError, redactSecrets } from "./ocr";
+
+export const OCR_MESSAGES = {
+  unavailable: "Receipt scanning isn't available right now. You can still add the expense by typing it.",
+  failed: "Couldn't read that receipt. Try a clearer, well-lit photo — or type the expense instead.",
+  error: "Something went wrong while scanning. Please try again.",
+};
 import { extractReceiptFields } from "@speak2split/shared";
 import { saveFile } from "../documents/storage";
 
@@ -36,13 +42,17 @@ receiptsRouter.post("/scan", upload.single("image"), async (req: AuthedRequest, 
   try {
     rawText = await runOcr(file.buffer);
   } catch (err: any) {
+    // Provider details (already redacted in ocr.ts) go to server logs only —
+    // the app only ever receives a generic, user-friendly message.
+    // eslint-disable-next-line no-console
+    console.warn("[receipts] OCR failed:", redactSecrets(String(err?.message ?? err)));
     if (err instanceof OcrNotConfiguredError) {
-      return res.status(503).json({ error: err.message });
+      return res.status(503).json({ error: OCR_MESSAGES.unavailable, code: "OCR_UNAVAILABLE" });
     }
     if (err instanceof OcrError) {
-      return res.status(422).json({ error: err.message });
+      return res.status(422).json({ error: OCR_MESSAGES.failed, code: "OCR_FAILED" });
     }
-    return res.status(500).json({ error: err?.message || "Receipt OCR scan failed" });
+    return res.status(500).json({ error: OCR_MESSAGES.error, code: "OCR_ERROR" });
   }
 
   const extraction = extractReceiptFields(rawText);

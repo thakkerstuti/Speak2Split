@@ -1,13 +1,13 @@
 import { Router, Response } from "express";
 import { z } from "zod";
 import { ExpenseModel } from "../db/models/Expense";
-import { GroupMemberModel } from "../db/models/Group";
-import { UserModel } from "../db/models/User";
+import { GroupModel, GroupMemberModel } from "../db/models/Group";
+import { rankGroups, GroupSignal } from "./group-inference";
 import { ContactModel } from "../db/models/Contact";
 import { ActivityEventModel } from "../db/models/ActivityEvent";
 import { AuthedRequest, requireAuth } from "../auth/auth.router";
 import { assertMembership } from "../groups/groups.router";
-import { objectId } from "../validation";
+import { objectId, validateObjectIdParams } from "../validation";
 import { calculateSplit, SplitValidationError, parseExpenseUtterance, resolveNames } from "@speak2split/shared";
 import { broadcastToGroup } from "../realtime/socket";
 import { buildCandidatePoolForGroup } from "../resolution/resolution.router";
@@ -15,6 +15,7 @@ import { notifyGroupMembers } from "../notifications/notification.service";
 
 export const expensesRouter = Router();
 expensesRouter.use(requireAuth);
+validateObjectIdParams(expensesRouter, "groupId");
 
 const createExpenseSchema = z.object({
   groupId: objectId,
@@ -49,27 +50,19 @@ expensesRouter.post("/", async (req: AuthedRequest, res: Response) => {
   const isMember = await assertMembership(input.groupId, req.userId!);
   if (!isMember) return res.status(403).json({ error: "Not a member of this group" });
 
-  // Every participant/payer must actually belong to the group. If an existing registered
-  // user was resolved as a participant/payer, ensure they are activated as a group member.
+  // Every payer and participant must ALREADY be an active member of the group.
+  // Creating an expense never adds anyone to a group — membership changes only
+  // happen through the explicit POST /groups/:groupId/members route.
   const activeMembers = await GroupMemberModel.find({ groupId: input.groupId, status: "ACTIVE" }).lean();
   const validMemberIds = new Set(activeMembers.map((m) => String(m.userId)));
   const allReferencedIds = [...input.payers.map((p) => p.userId), ...input.participants.map((p) => p.userId)];
-  const missingUserIds = allReferencedIds.filter((id) => !validMemberIds.has(id));
-  if (missingUserIds.length > 0) {
-    const existingUsers = await UserModel.find({ _id: { $in: missingUserIds }, isActive: true });
-    for (const u of existingUsers) {
-      await GroupMemberModel.findOneAndUpdate(
-        { groupId: input.groupId, userId: u._id },
-        { $set: { status: "ACTIVE" }, $setOnInsert: { role: "MEMBER" } },
-        { upsert: true }
-      );
-      validMemberIds.add(String(u._id));
-    }
-  }
-
   const invalidId = allReferencedIds.find((id) => !validMemberIds.has(id));
   if (invalidId) {
-    return res.status(400).json({ error: `User ${invalidId} is not an active member of this group` });
+    return res.status(400).json({
+      error: "Everyone who paid or is splitting must already be a member of this group.",
+      code: "NOT_A_MEMBER",
+      userId: invalidId,
+    });
   }
 
   // Server-side split calculation — this is the ONLY place split math happens.
@@ -132,43 +125,15 @@ expensesRouter.post("/", async (req: AuthedRequest, res: Response) => {
 });
 
 const parseSchema = z.object({
-  groupId: objectId,
+  // Optional: when omitted (voice-first entry), the group is inferred from
+  // the sentence — spoken group name, mentioned people, then recency.
+  groupId: objectId.optional(),
   utterance: z.string().min(1),
 });
 
-/**
- * Voice/text natural-language entry point. Runs the two-stage pipeline the
- * spec requires as separate concerns: (1) NLP extraction of raw mentions
- * and amounts, (2) name resolution of those mentions scoped to this group.
- * Returns a draft for the client to render as a confirmation/edit screen —
- * this endpoint NEVER creates the expense itself; POST /expenses does that
- * once the person confirms (and any ambiguous names are resolved).
- */
-expensesRouter.post("/parse", async (req: AuthedRequest, res: Response) => {
-  const parsed = parseSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
-  const { groupId, utterance } = parsed.data;
+type Resolutions = ReturnType<typeof resolveNames>;
 
-  const isMember = await assertMembership(groupId, req.userId!);
-  if (!isMember) return res.status(403).json({ error: "Not a member of this group" });
-
-  let draft;
-  try {
-    draft = await parseExpenseUtterance(utterance);
-  } catch (err) {
-    return res.status(422).json({ error: `Could not understand that expense: ${(err as Error).message}` });
-  }
-
-  const selfAliases = new Set(["me", "i", "myself"]);
-  const allMentions = [
-    ...draft.payerMentions.map((p) => p.mention),
-    ...draft.participantMentions,
-  ].filter((m) => !selfAliases.has(m.toLowerCase()));
-  const uniqueMentions = [...new Set(allMentions)];
-
-  const candidatePool = await buildCandidatePoolForGroup(req.userId!, groupId);
-  const resolutions = resolveNames(uniqueMentions, candidatePool);
-
+function toResolvedMentions(uniqueMentions: string[], resolutions: Resolutions) {
   const resolvedMentions: Record<string, unknown> = {};
   for (const mention of uniqueMentions) {
     const outcome = resolutions[mention];
@@ -184,10 +149,133 @@ expensesRouter.post("/parse", async (req: AuthedRequest, res: Response) => {
       resolvedMentions[mention] = { status: "NOT_FOUND" };
     }
   }
+  return resolvedMentions;
+}
 
-  const needsDisambiguation = Object.values(resolvedMentions).some((r: any) => r.status !== "RESOLVED");
+const MAX_GROUPS_FOR_INFERENCE = 15;
 
-  return res.json({ draft, resolvedMentions, needsDisambiguation });
+/**
+ * Voice/text natural-language entry point. Runs the two-stage pipeline the
+ * spec requires as separate concerns: (1) NLP extraction of raw mentions
+ * and amounts, (2) name resolution of those mentions scoped to a group.
+ * If no groupId is supplied, the most likely group is inferred and returned
+ * alongside the draft so the client can show (and let the user change) it.
+ * This endpoint NEVER creates the expense itself; POST /expenses does that
+ * once the person confirms (and any ambiguous names are resolved).
+ */
+expensesRouter.post("/parse", async (req: AuthedRequest, res: Response) => {
+  try {
+    const parsed = parseSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
+    const { groupId: requestedGroupId, utterance } = parsed.data;
+    const userId = req.userId!;
+
+    if (requestedGroupId) {
+      const isMember = await assertMembership(requestedGroupId, userId);
+      if (!isMember) return res.status(403).json({ error: "Not a member of this group" });
+    }
+
+    let draft;
+    try {
+      draft = await parseExpenseUtterance(utterance);
+    } catch (err) {
+      return res.status(422).json({ error: `Could not understand that expense: ${(err as Error).message}` });
+    }
+
+    const selfAliases = new Set(["me", "i", "myself"]);
+    const allMentions = [...draft.payerMentions.map((p) => p.mention), ...draft.participantMentions].filter(
+      (m) => !selfAliases.has(m.toLowerCase())
+    );
+    const uniqueMentions = [...new Set(allMentions)];
+
+    // ---- Explicit group: unchanged behaviour ----
+    if (requestedGroupId) {
+      const candidatePool = await buildCandidatePoolForGroup(userId, requestedGroupId);
+      const resolvedMentions = toResolvedMentions(uniqueMentions, resolveNames(uniqueMentions, candidatePool));
+      const needsDisambiguation = Object.values(resolvedMentions).some((r: any) => r.status !== "RESOLVED");
+      const group = await GroupModel.findById(requestedGroupId).lean();
+      return res.json({
+        draft,
+        resolvedMentions,
+        needsDisambiguation,
+        groupId: requestedGroupId,
+        groupName: group?.name,
+        groupInference: { inferred: false, confidence: "high", reason: "Selected group", alternatives: [] },
+      });
+    }
+
+    // ---- No group: infer it ----
+    const memberships = await GroupMemberModel.find({ userId, status: "ACTIVE" }).lean();
+    const groups = await GroupModel.find({
+      _id: { $in: memberships.map((m) => m.groupId) },
+      archivedAt: { $exists: false },
+    }).lean();
+    if (groups.length === 0) {
+      return res.status(422).json({
+        error: "Create a group first — expenses are always split inside a group.",
+        code: "NO_GROUPS",
+      });
+    }
+
+    const activity = await ExpenseModel.aggregate([
+      { $match: { groupId: { $in: groups.map((g) => g._id) }, status: "ACTIVE" } },
+      { $group: { _id: "$groupId", last: { $max: "$createdAt" } } },
+    ]);
+    const lastActivity = new Map(activity.map((a) => [String(a._id), new Date(a.last).getTime()]));
+    const lastActivityOf = (g: (typeof groups)[number]) =>
+      lastActivity.get(String(g._id)) ?? (g.createdAt ? new Date(g.createdAt).getTime() : null);
+
+    const candidateGroups = [...groups]
+      .sort((a, b) => (lastActivityOf(b) ?? 0) - (lastActivityOf(a) ?? 0))
+      .slice(0, MAX_GROUPS_FOR_INFERENCE);
+
+    const perGroup = await Promise.all(
+      candidateGroups.map(async (g) => {
+        const gid = String(g._id);
+        const resolutions = uniqueMentions.length
+          ? resolveNames(uniqueMentions, await buildCandidatePoolForGroup(userId, gid))
+          : ({} as Resolutions);
+        let memberMatches = 0;
+        let ambiguousMemberMatches = 0;
+        for (const m of uniqueMentions) {
+          const o = resolutions[m];
+          if (o?.status === "RESOLVED" && o.candidate.isCurrentGroupMember) memberMatches++;
+          else if (o?.status === "AMBIGUOUS" && o.candidates.some((c) => c.candidate.isCurrentGroupMember)) ambiguousMemberMatches++;
+        }
+        const signal: GroupSignal = {
+          groupId: gid,
+          groupName: g.name,
+          memberMatches,
+          ambiguousMemberMatches,
+          lastActivityAt: lastActivityOf(g),
+        };
+        return { signal, resolutions };
+      })
+    );
+
+    const inference = rankGroups(utterance, perGroup.map((p) => p.signal));
+    const best = inference.ranked[0];
+    const chosen = perGroup.find((p) => p.signal.groupId === best.groupId)!;
+    const resolvedMentions = toResolvedMentions(uniqueMentions, chosen.resolutions);
+    const needsDisambiguation = Object.values(resolvedMentions).some((r: any) => r.status !== "RESOLVED");
+
+    return res.json({
+      draft,
+      resolvedMentions,
+      needsDisambiguation,
+      groupId: best.groupId,
+      groupName: best.groupName,
+      groupInference: {
+        inferred: true,
+        confidence: inference.confidence,
+        reason: inference.reason,
+        alternatives: inference.ranked.slice(1, 4).map((r) => ({ groupId: r.groupId, groupName: r.groupName })),
+      },
+    });
+  } catch (err) {
+    console.error("Error in /expenses/parse:", err);
+    return res.status(500).json({ error: "Couldn't process that expense. Please try again." });
+  }
 });
 
 expensesRouter.get("/group/:groupId", async (req: AuthedRequest, res: Response) => {
