@@ -1,8 +1,8 @@
 /**
  * Speech-to-Text Provider
  *
- * Real integration with Speech-to-Text APIs: Gnani Prisma v2.5, OpenAI Whisper,
- * Groq Whisper, Gemini, and Google Speech-to-Text. Kept behind a narrow interface
+ * Real integration with Speech-to-Text APIs: Groq Whisper (primary), Gemini,
+ * OpenAI Whisper, and Google Speech-to-Text (fallbacks). Kept behind a narrow interface
  * (`transcribeAudio`) so providers can be configured via STT_PROVIDER env var
  * without touching calling code. If the configured provider's credential is
  * missing, this throws a specific, clear error.
@@ -16,83 +16,26 @@ export interface TranscriptionResult {
   languageDetected?: string;
 }
 
-async function transcribeWithGnani(
-  audioBuffer: Buffer,
-  fileName: string,
-  mimeType: string,
-  languageCodeOverride?: string
-): Promise<TranscriptionResult> {
-  const apiKey = process.env.GNANI_API_KEY;
-  if (!apiKey) {
-    throw new SttNotConfiguredError("GNANI_API_KEY is not configured");
-  }
+const PROVIDER_TIMEOUT_MS = 30000;
 
-  if (!audioBuffer || audioBuffer.length === 0) {
-    throw new SttTranscriptionError("Audio file is empty");
-  }
-
-  const languageCode = languageCodeOverride || process.env.GNANI_LANGUAGE_CODE || "en-IN";
-  const preferredLanguage = process.env.GNANI_PREFERRED_LANGUAGE || languageCode;
-  const safeMime = mimeType || "audio/m4a";
-  const safeName = fileName || "recording.m4a";
-
-  const formData = new FormData();
-  formData.append("audio_file", new Blob([audioBuffer], { type: safeMime }), safeName);
-  formData.append("language_code", languageCode);
-  formData.append("preferred_language", preferredLanguage);
-  formData.append("format", "transcribe");
-  formData.append("itn_native_numerals", "true");
-
-  console.log(
-    `[Gnani STT] Requesting transcription (${audioBuffer.length} bytes, mime=${safeMime}, lang=${languageCode})`
-  );
-
+/**
+ * fetch() wrapper used by every provider: enforces a timeout and converts
+ * network-level failures (DNS, connection reset, abort) into a
+ * SttTranscriptionError so the fallback cascade can move on to the next
+ * provider and the router can return a clean 422 instead of a 500.
+ */
+async function providerFetch(providerName: string, url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    const response = await fetch("https://api.vachana.ai/stt/v3", {
-      method: "POST",
-      headers: {
-        "X-API-Key-ID": apiKey,
-      },
-      body: formData as any,
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const body = await response.text();
-      if (response.status === 429) {
-        throw new SttTranscriptionError("Gnani Prisma rate limit exceeded (HTTP 429). Please try again in a moment.");
-      }
-      const safeKeyPattern = new RegExp(apiKey.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&"), "g");
-      const safeBody = body.replace(safeKeyPattern, "***");
-      throw new SttTranscriptionError(`Gnani Prisma transcription failed (HTTP ${response.status}): ${safeBody}`);
-    }
-
-    const json = (await response.json()) as any;
-    if (json.success === false) {
-      throw new SttTranscriptionError(
-        `Gnani Prisma transcription failed: ${json.error || json.message || "Unknown error"}`
-      );
-    }
-
-    const transcript = (json.transcript || json.text || json.result || json.data?.transcript || "").trim();
-    if (!transcript) {
-      throw new SttTranscriptionError("Gnani Prisma returned no transcript text");
-    }
-
-    return { transcript, languageDetected: json.language || languageCode };
+    return await fetch(url, { ...init, signal: controller.signal });
   } catch (err: any) {
-    if (err.name === "AbortError") {
-      throw new SttTranscriptionError("Gnani Prisma API request timed out (30s)");
+    if (err?.name === "AbortError") {
+      throw new SttTranscriptionError(`${providerName} request timed out (${PROVIDER_TIMEOUT_MS / 1000}s)`);
     }
-    if (err instanceof SttNotConfiguredError || err instanceof SttTranscriptionError) {
-      throw err;
-    }
-    throw new SttTranscriptionError(`Gnani Prisma STT error: ${err?.message || err}`);
+    throw new SttTranscriptionError(`${providerName} request failed: ${err?.message || err}`);
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -106,7 +49,7 @@ async function transcribeWithGroq(audioBuffer: Buffer, fileName: string, mimeTyp
   formData.append("file", new Blob([audioBuffer], { type: mimeType || "audio/m4a" }), fileName || "recording.m4a");
   formData.append("model", "whisper-large-v3-turbo");
 
-  const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+  const response = await providerFetch("Groq Whisper", "https://api.groq.com/openai/v1/audio/transcriptions", {
     method: "POST",
     headers: { authorization: `Bearer ${apiKey}` },
     body: formData as any,
@@ -136,7 +79,8 @@ async function transcribeWithGemini(audioBuffer: Buffer, mimeType: string): Prom
   }
 
   const safeMime = mimeType || "audio/m4a";
-  const response = await fetch(
+  const response = await providerFetch(
+    "Gemini Audio STT",
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
     {
       method: "POST",
@@ -188,7 +132,7 @@ async function transcribeWithWhisper(audioBuffer: Buffer, fileName: string, mime
   formData.append("file", new Blob([audioBuffer], { type: mimeType || "audio/m4a" }), fileName || "recording.m4a");
   formData.append("model", "whisper-1");
 
-  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+  const response = await providerFetch("OpenAI Whisper", "https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
     headers: { authorization: `Bearer ${apiKey}` },
     body: formData as any,
@@ -217,7 +161,7 @@ async function transcribeWithGoogleSpeech(audioBuffer: Buffer): Promise<Transcri
     throw new SttNotConfiguredError("GOOGLE_SPEECH_API_KEY is not configured");
   }
 
-  const response = await fetch(`https://speech.googleapis.com/v1/speech:recognize?key=${apiKey}`, {
+  const response = await providerFetch("Google Speech-to-Text", `https://speech.googleapis.com/v1/speech:recognize?key=${apiKey}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -243,15 +187,15 @@ async function transcribeWithGoogleSpeech(audioBuffer: Buffer): Promise<Transcri
 export async function transcribeAudio(
   audioBuffer: Buffer,
   fileName: string,
-  mimeType: string,
-  languageCode?: string
+  mimeType: string
 ): Promise<TranscriptionResult> {
-  const preferred = process.env.STT_PROVIDER?.toLowerCase();
+  if (!audioBuffer || audioBuffer.length === 0) {
+    throw new SttTranscriptionError("Audio file is empty");
+  }
+
+  const preferred = process.env.STT_PROVIDER?.trim().toLowerCase();
 
   // Explicit provider selection: call requested provider directly without fallback
-  if (preferred === "gnani") {
-    return transcribeWithGnani(audioBuffer, fileName, mimeType, languageCode);
-  }
   if (preferred === "groq") {
     return transcribeWithGroq(audioBuffer, fileName, mimeType);
   }
@@ -264,10 +208,12 @@ export async function transcribeAudio(
   if (preferred === "google") {
     return transcribeWithGoogleSpeech(audioBuffer);
   }
+  if (preferred) {
+    console.warn(`[STT] Unknown STT_PROVIDER "${preferred}"; using automatic provider cascade (Groq first).`);
+  }
 
-  // Automatic cascade order when STT_PROVIDER is not set
+  // Automatic cascade: Groq is primary, the rest are fallbacks in order.
   const defaultOrder = [
-    { provider: "gnani", fn: () => transcribeWithGnani(audioBuffer, fileName, mimeType, languageCode) },
     { provider: "groq", fn: () => transcribeWithGroq(audioBuffer, fileName, mimeType) },
     { provider: "gemini", fn: () => transcribeWithGemini(audioBuffer, mimeType) },
     { provider: "whisper", fn: () => transcribeWithWhisper(audioBuffer, fileName, mimeType) },
@@ -283,17 +229,16 @@ export async function transcribeAudio(
         // Skip unconfigured providers silently
         continue;
       }
+      console.warn(`[STT] ${item.provider} failed, trying next provider: ${err?.message || err}`);
       errors.push(`[${item.provider}] ${err?.message || err}`);
     }
   }
 
   if (errors.length === 0) {
     throw new SttNotConfiguredError(
-      "No STT API keys configured on server. Set GNANI_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or GOOGLE_SPEECH_API_KEY."
+      "No STT API keys configured on server. Set GROQ_API_KEY (primary), or GEMINI_API_KEY, OPENAI_API_KEY, or GOOGLE_SPEECH_API_KEY."
     );
   }
 
   throw new SttTranscriptionError(`All transcription providers failed:\n${errors.join("\n")}`);
 }
-
-
