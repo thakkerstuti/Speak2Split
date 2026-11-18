@@ -22,8 +22,7 @@ voiceRouter.post("/transcribe", upload.single("audio"), async (req: AuthedReques
   if (!file) return res.status(400).json({ error: "No audio file provided (expected multipart field 'audio')" });
 
   try {
-    const languageCode = (req.body?.language_code || req.body?.language || req.body?.languageCode) as string | undefined;
-    const result = await transcribeAudio(file.buffer, file.originalname || "recording.m4a", file.mimetype, languageCode);
+    const result = await transcribeAudio(file.buffer, file.originalname || "recording.m4a", file.mimetype);
     return res.json(result);
   } catch (err: any) {
     if (err instanceof SttNotConfiguredError) {

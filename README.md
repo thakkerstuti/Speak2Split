@@ -157,23 +157,28 @@ npm run dev:mobile
 
 ---
 
-## 🎙️ Speech-to-Text Integration (Gnani Prisma v2.5)
+## 🎙️ Speech-to-Text Integration (Groq Whisper)
 
-Speak2Split uses **Gnani Prisma v2.5** (`https://api.vachana.ai/stt/v3`) as the Speech-to-Text (STT) provider for the voice expense flow.
+Speak2Split uses **Groq Whisper** (`whisper-large-v3-turbo`) as the primary Speech-to-Text (STT) provider for the voice expense flow, with **Gemini**, **OpenAI Whisper**, and **Google Speech-to-Text** as automatic fallbacks.
 
-### 1. How to Obtain a Gnani API Key
-1. Register/Sign in at the official Gnani portal ([api.vachana.ai](https://api.vachana.ai)).
-2. Generate an API key under your developer dashboard.
-3. Use the key in your backend `.env` file (`GNANI_API_KEY`). The API key is kept strictly on the backend and is never exposed to the mobile client.
+### 1. How to Obtain a Groq API Key
+1. Sign in at the [Groq Console](https://console.groq.com).
+2. Create an API key under **API Keys**.
+3. Put it in your backend `.env` file (`GROQ_API_KEY`). STT API keys stay on the backend and are never sent to the mobile client.
 
-### 2. Required Backend Environment Variables
-Add the following to your backend `.env`:
+### 2. Backend Environment Variables
 ```env
-STT_PROVIDER=gnani
-GNANI_API_KEY=your_gnani_api_key_here
-GNANI_LANGUAGE_CODE=en-IN
+# Leave empty for the automatic cascade: Groq -> Gemini -> OpenAI Whisper -> Google.
+# Providers without a key are skipped; a failing provider falls through to the next.
+STT_PROVIDER=
+GROQ_API_KEY=your_groq_api_key_here
+
+# Optional fallbacks
+GEMINI_API_KEY=
+OPENAI_API_KEY=
+GOOGLE_SPEECH_API_KEY=
 ```
-*Note*: Initially configured for `en-IN`, with architecture supporting Indian languages like `hi-IN` (Hindi), `gu-IN` (Gujarati), `kn-IN` (Kannada), etc.
+Setting `STT_PROVIDER` to `groq`, `gemini`, `whisper`, or `google` pins that single provider with no fallback.
 
 ### 3. How to Run the Backend
 ```bash
@@ -185,13 +190,12 @@ npm run dev:api
    ```bash
    npm --prefix apps/api test
    ```
-   Runs mocked tests verifying Gnani STT service, `X-API-Key-ID` header passing, language parameters, rate limits, error handling, and key sanitization without consuming real API credits.
+   Runs mocked tests covering the Groq request, the fallback cascade, rate limits, network failures, error handling, and key sanitization, without using real API credits.
 2. **Voice Expense Flow**:
-   - User taps Voice / Speak in the app or sends a POST request with an audio recording to `/voice/transcribe`.
-   - Backend sends audio to `https://api.vachana.ai/stt/v3` with `X-API-Key-ID`.
-   - Gnani Prisma v2.5 transcribes audio and returns the text transcript.
-   - The transcript is processed by the existing Speak2Split NLP expense parser (`/expenses/parse`).
-   - The expense creation and split calculation pipeline executes as normal.
+   - User picks a group, taps Voice / Speak in the app, and records; the app uploads the audio to `/voice/transcribe`.
+   - The backend transcribes it with Groq Whisper (falling back to the next configured provider on failure) and returns the transcript.
+   - The app automatically sends the transcript to the existing NLP expense parser (`/expenses/parse`).
+   - Ambiguous names are resolved by tapping the intended person, the draft can be edited, and confirming creates the expense via the normal split pipeline.
 
 
 ---
