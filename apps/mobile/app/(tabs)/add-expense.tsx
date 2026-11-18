@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, Alert, ActivityIndicator, Modal } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, Alert, ActivityIndicator, Modal, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Mic, Square, Camera, Edit3, ArrowLeft } from "lucide-react-native";
@@ -101,8 +101,15 @@ export default function AddExpenseScreen() {
   const [utterance, setUtterance] = useState("");
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [voiceTitle, setVoiceTitle] = useState("");
+  const [voiceAmount, setVoiceAmount] = useState("");
+  const [voiceCategory, setVoiceCategory] = useState("general");
 
   const startRecording = async () => {
+    if (!selectedGroupId) {
+      Alert.alert("Pick a group first", "Choose which group this voice expense belongs to.");
+      return;
+    }
     try {
       const { status } = await Audio.requestPermissionsAsync();
       if (status !== "granted") {
@@ -129,18 +136,31 @@ export default function AddExpenseScreen() {
 
     setTranscribing(true);
     try {
+      const filename = uri.split("/").pop() || "recording.m4a";
+      const match = /\.(\w+)$/.exec(filename);
+      const ext = match ? match[1].toLowerCase() : "m4a";
+      const type = ext === "mp4" ? "audio/mp4" : ext === "wav" ? "audio/wav" : "audio/m4a";
+
       const formData = new FormData();
       formData.append("audio", {
-        uri,
-        name: "recording.m4a",
-        type: "audio/m4a",
+        uri: Platform.OS === "android" ? uri : uri.replace("file://", ""),
+        name: filename,
+        type,
       } as unknown as Blob);
 
       const { data } = await api.post<{ transcript: string }>("/voice/transcribe", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "multipart/form-data",
+        },
+        transformRequest: (d) => d,
       });
-      setUtterance(data.transcript);
-      Alert.alert("Transcribed", `"${data.transcript}"\n\nReview it below, then tap Parse.`);
+
+      const text = (data.transcript || "").trim();
+      setUtterance(text);
+      if (text) {
+        await parseUtterance(text);
+      }
     } catch (err: any) {
       const message = err?.response?.data?.error ?? String(err?.message ?? err);
       Alert.alert(
@@ -159,6 +179,122 @@ export default function AddExpenseScreen() {
   const [addPersonPhone, setAddPersonPhone] = useState("");
   const [addPersonEmail, setAddPersonEmail] = useState("");
   const [addingPerson, setAddingPerson] = useState(false);
+
+  // Resolves an ambiguous candidate when tapped
+  const resolveCandidate = (mention: string, candidate: { userId?: string; displayName: string }) => {
+    if (!candidate.userId) return;
+    setParseResult((prev: any) => {
+      if (!prev) return prev;
+      const updatedMentions = {
+        ...prev.resolvedMentions,
+        [mention]: {
+          status: "RESOLVED",
+          userId: candidate.userId,
+          displayName: candidate.displayName,
+        },
+      };
+      const stillNeedsDisambiguation = Object.values(updatedMentions).some(
+        (r: any) => r.status !== "RESOLVED"
+      );
+      return {
+        ...prev,
+        resolvedMentions: updatedMentions,
+        needsDisambiguation: stillNeedsDisambiguation,
+      };
+    });
+  };
+
+  const confirmVoiceExpense = () => {
+    if (!selectedGroupId || !myUserId || !parseResult) return;
+
+    if (parseResult.needsDisambiguation) {
+      Alert.alert(
+        "Ambiguous Name",
+        "Please select which person you meant from the options below before saving."
+      );
+      return;
+    }
+
+    const hasUnresolved = Object.values(parseResult.resolvedMentions || {}).some(
+      (r: any) => r.status === "NOT_FOUND"
+    );
+    if (hasUnresolved) {
+      Alert.alert(
+        "Unrecognized Person",
+        "One or more people could not be identified. Tap '+ Add person' to add them before saving."
+      );
+      return;
+    }
+
+    const amountNum = Number(voiceAmount);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      Alert.alert("Invalid amount", "Enter a positive expense amount.");
+      return;
+    }
+
+    // Collect participants
+    const participantUserIds = new Set<string>();
+    const draftParticipants = parseResult.draft?.participantMentions || [];
+    const resolvedMentions = parseResult.resolvedMentions || {};
+
+    for (const mention of draftParticipants) {
+      const lower = mention.toLowerCase();
+      if (lower === "me" || lower === "i" || lower === "myself") {
+        participantUserIds.add(myUserId);
+      } else if (resolvedMentions[mention]?.status === "RESOLVED" && resolvedMentions[mention]?.userId) {
+        participantUserIds.add(resolvedMentions[mention].userId);
+      }
+    }
+
+    if (participantUserIds.size === 0) {
+      const groupMemberIds = groupDetailQuery.data?.members.map((m) => m.id) ?? [];
+      for (const id of groupMemberIds) {
+        participantUserIds.add(id);
+      }
+    }
+    if (participantUserIds.size === 0) {
+      participantUserIds.add(myUserId);
+    }
+
+    // Collect payers
+    const payers: { userId: string; amountPaid: number }[] = [];
+    const draftPayers = parseResult.draft?.payerMentions || [];
+    let payersTotal = 0;
+
+    for (const p of draftPayers) {
+      const lower = p.mention.toLowerCase();
+      let payerUserId: string | null = null;
+      if (lower === "me" || lower === "i" || lower === "myself") {
+        payerUserId = myUserId;
+      } else if (resolvedMentions[p.mention]?.status === "RESOLVED" && resolvedMentions[p.mention]?.userId) {
+        payerUserId = resolvedMentions[p.mention].userId;
+      }
+
+      if (payerUserId) {
+        const paid = p.amountPaid ? Number(p.amountPaid) : amountNum;
+        payers.push({ userId: payerUserId, amountPaid: paid });
+        payersTotal += paid;
+      }
+    }
+
+    const finalPayers =
+      payers.length > 0 && Math.abs(payersTotal - amountNum) < 0.01
+        ? payers
+        : [{ userId: myUserId, amountPaid: amountNum }];
+
+    createExpenseMutation.mutate({
+      groupId: selectedGroupId,
+      title: voiceTitle.trim() || parseResult.draft?.title || "Voice Expense",
+      amount: amountNum,
+      category: voiceCategory.trim() || parseResult.draft?.category || "general",
+      splitMethod: parseResult.draft?.splitMethod || "EQUAL",
+      payers: finalPayers,
+      participants: Array.from(participantUserIds).map((userId) => ({ userId })),
+      source: "VOICE",
+      aiRawInput: utterance,
+      aiConfidence: parseResult.draft?.parseConfidence ?? 0.9,
+    });
+  };
 
   // ---------- Receipt scan state ----------
   const [scanningReceipt, setScanningReceipt] = useState(false);
@@ -237,13 +373,24 @@ export default function AddExpenseScreen() {
     setReceiptDraft(null);
   };
 
-  const parseUtterance = async () => {
-    if (!selectedGroupId || !utterance.trim()) return;
+  const parseUtterance = async (textOverride?: string) => {
+    const text = (textOverride ?? utterance).trim();
+    if (!selectedGroupId || !text) {
+      if (!selectedGroupId) {
+        Alert.alert("Pick a group first", "Choose which group this voice expense belongs to.");
+      }
+      return;
+    }
     setParsing(true);
     setParseResult(null);
     try {
-      const { data } = await api.post("/expenses/parse", { groupId: selectedGroupId, utterance });
+      const { data } = await api.post("/expenses/parse", { groupId: selectedGroupId, utterance: text });
       setParseResult(data);
+      if (data?.draft) {
+        setVoiceTitle(data.draft.title || "Voice Expense");
+        setVoiceAmount(data.draft.amount ? String(data.draft.amount) : "");
+        setVoiceCategory(data.draft.category || "general");
+      }
     } catch (err: any) {
       Alert.alert("Couldn't parse that", err?.response?.data?.error ?? "Try rephrasing.");
     } finally {
@@ -264,6 +411,9 @@ export default function AddExpenseScreen() {
         phone: addPersonPhone || undefined,
         email: addPersonEmail || undefined,
       });
+      if (selectedGroupId && addPersonEmail) {
+        await groupsApi.addMember(selectedGroupId, addPersonEmail).catch(() => {});
+      }
       setAddPersonFor(null);
       setAddPersonName("");
       setAddPersonPhone("");
@@ -398,50 +548,120 @@ export default function AddExpenseScreen() {
             value={utterance}
             onChangeText={setUtterance}
           />
-          <Pressable style={styles.submitButton} onPress={parseUtterance} disabled={parsing}>
+          <Pressable style={styles.submitButton} onPress={() => parseUtterance()} disabled={parsing}>
             {parsing ? <ActivityIndicator color={colors.onDark} /> : <Text style={styles.submitButtonText}>Parse</Text>}
           </Pressable>
 
           {parseResult && (
             <View style={styles.parseResultCard}>
-              <Text style={styles.parseResultTitle}>{parseResult.draft.title} — ₹{parseResult.draft.amount}</Text>
-              <Text style={styles.muted}>Category: {parseResult.draft.category} · Split: {parseResult.draft.splitMethod}</Text>
-              {Object.entries(parseResult.resolvedMentions).map(([mention, res]: [string, any]) => (
-                <View key={mention} style={styles.mentionRow}>
-                  <Text style={styles.mentionLabel}>"{mention}"</Text>
-                  {res.status === "RESOLVED" && <Text style={styles.mentionResolved}>→ {res.displayName}</Text>}
-                  {res.status === "AMBIGUOUS" && (
-                    <View>
-                      <Text style={styles.mentionAmbiguous}>{res.promptMessage}</Text>
-                      <View style={{ flexDirection: "row", gap: spacing.xs, marginTop: spacing.xs }}>
-                        {res.candidates.map((c: any) => (
-                          <Pressable key={c.userId} style={styles.candidateChip}>
-                            <Text style={styles.candidateChipText}>{c.displayName}</Text>
-                          </Pressable>
-                        ))}
-                      </View>
-                    </View>
-                  )}
-                  {res.status === "NOT_FOUND" && (
-                    <View>
-                      <Text style={styles.mentionNotFound}>Couldn't identify "{mention}"</Text>
-                      <Pressable
-                        style={styles.candidateChip}
-                        onPress={() => {
-                          setAddPersonFor(mention);
-                          setAddPersonName(mention);
-                        }}
-                      >
-                        <Text style={styles.candidateChipText}>+ Add person</Text>
-                      </Pressable>
-                    </View>
-                  )}
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.xs }}>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.textMuted }}>AI PARSED DRAFT</Text>
+                <View
+                  style={{
+                    backgroundColor: parseResult.needsDisambiguation ? colors.warning + "25" : colors.positive + "25",
+                    paddingHorizontal: 8,
+                    paddingVertical: 2,
+                    borderRadius: radius.pill,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontFamily: fonts.bold,
+                      fontSize: 11,
+                      color: parseResult.needsDisambiguation ? colors.warning : colors.positive,
+                    }}
+                  >
+                    {parseResult.needsDisambiguation ? "DISAMBIGUATION NEEDED" : "READY TO CONFIRM"}
+                  </Text>
                 </View>
-              ))}
-              <Text style={[styles.muted, { marginTop: spacing.sm }]}>
-                Tap a name above to confirm who they are, then this becomes a normal expense confirmation before it's created —
-                nothing is saved yet.
-              </Text>
+              </View>
+
+              <Text style={styles.label}>TITLE</Text>
+              <TextInput
+                style={styles.input}
+                value={voiceTitle}
+                onChangeText={setVoiceTitle}
+                placeholder="Expense Title"
+                placeholderTextColor={colors.textMuted}
+              />
+
+              <Text style={[styles.label, { marginTop: spacing.md }]}>AMOUNT (₹)</Text>
+              <TextInput
+                style={styles.input}
+                value={voiceAmount}
+                onChangeText={setVoiceAmount}
+                keyboardType="decimal-pad"
+                placeholder="Amount"
+                placeholderTextColor={colors.textMuted}
+              />
+
+              <Text style={[styles.label, { marginTop: spacing.md }]}>CATEGORY</Text>
+              <TextInput
+                style={styles.input}
+                value={voiceCategory}
+                onChangeText={setVoiceCategory}
+                placeholder="Category (e.g. food, electricity, taxi)"
+                placeholderTextColor={colors.textMuted}
+              />
+
+              <Text style={[styles.label, { marginTop: spacing.md }]}>NAME RESOLUTION</Text>
+              {Object.entries(parseResult.resolvedMentions).length === 0 ? (
+                <Text style={[styles.muted, { textAlign: "left", marginTop: 4 }]}>Split equally among group members</Text>
+              ) : (
+                Object.entries(parseResult.resolvedMentions).map(([mention, res]: [string, any]) => (
+                  <View key={mention} style={styles.mentionRow}>
+                    <Text style={styles.mentionLabel}>Mention: "{mention}"</Text>
+                    {res.status === "RESOLVED" && <Text style={styles.mentionResolved}>✓ {res.displayName}</Text>}
+                    {res.status === "AMBIGUOUS" && (
+                      <View>
+                        <Text style={styles.mentionAmbiguous}>{res.promptMessage}</Text>
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs, marginTop: spacing.xs }}>
+                          {res.candidates.map((c: any) => (
+                            <Pressable
+                              key={c.userId}
+                              style={styles.candidateChip}
+                              onPress={() => resolveCandidate(mention, c)}
+                            >
+                              <Text style={styles.candidateChipText}>{c.displayName}</Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                    {res.status === "NOT_FOUND" && (
+                      <View>
+                        <Text style={styles.mentionNotFound}>Couldn't identify "{mention}"</Text>
+                        <Pressable
+                          style={styles.candidateChip}
+                          onPress={() => {
+                            setAddPersonFor(mention);
+                            setAddPersonName(mention);
+                          }}
+                        >
+                          <Text style={styles.candidateChipText}>+ Add person</Text>
+                        </Pressable>
+                      </View>
+                    )}
+                  </View>
+                ))
+              )}
+
+              <Pressable
+                style={[
+                  styles.submitButton,
+                  (createExpenseMutation.isPending || parseResult.needsDisambiguation) && { opacity: 0.6 },
+                ]}
+                onPress={confirmVoiceExpense}
+                disabled={createExpenseMutation.isPending || parseResult.needsDisambiguation}
+              >
+                <Text style={styles.submitButtonText}>
+                  {createExpenseMutation.isPending
+                    ? "Saving Expense…"
+                    : parseResult.needsDisambiguation
+                    ? "Resolve Names Above"
+                    : "Confirm & Save Expense"}
+                </Text>
+              </Pressable>
             </View>
           )}
         </View>

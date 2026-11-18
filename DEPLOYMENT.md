@@ -61,7 +61,7 @@ enough that no calling code needs to change.
 |---|---|---|
 | Google Sign-In | GOOGLE_OAUTH_CLIENT_ID (backend), EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID (+ iOS/Android, mobile) | Same Web client ID on both sides |
 | Apple Sign-In | APPLE_SIGN_IN_CLIENT_ID (backend, = bundle ID) | Requires Apple Developer Program + "Sign In with Apple" capability |
-| Voice transcription | OPENAI_API_KEY (Whisper) or GOOGLE_SPEECH_API_KEY | Set STT_PROVIDER accordingly |
+| Voice transcription | GROQ_API_KEY (primary); optional fallbacks GEMINI_API_KEY, OPENAI_API_KEY, GOOGLE_SPEECH_API_KEY | Leave STT_PROVIDER unset for the Groq-first fallback cascade. Remove any old GNANI_* vars and STT_PROVIDER=gnani from the host |
 | Receipt OCR | GOOGLE_VISION_API_KEY | OCR_PROVIDER=google_vision |
 | Email notifications | RESEND_API_KEY, EMAIL_FROM_ADDRESS | Verify your sending domain in Resend first |
 | WhatsApp notifications | WHATSAPP_BUSINESS_PHONE_NUMBER_ID, WHATSAPP_BUSINESS_ACCESS_TOKEN | Requires a Meta Business account, approved message templates, and user opt-in per WhatsApp's policy |

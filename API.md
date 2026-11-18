@@ -109,11 +109,13 @@ All mutations broadcast shopping_item_updated over Socket.IO to the group room.
 
 ## Voice (`/voice`)
 
-- `POST /voice/transcribe` — multipart audio field. Real STT call (OpenAI
-  Whisper or Google Speech-to-Text, per STT_PROVIDER). Returns
+- `POST /voice/transcribe` — multipart audio field. Real STT call (Groq
+  Whisper primary, falling back to Gemini, OpenAI Whisper, then Google
+  Speech-to-Text; or a single provider pinned via STT_PROVIDER). Returns
   `{ transcript, languageDetected? }` only — never runs NLP/resolution
   itself. Feed the transcript into POST /expenses/parse next, the same path
-  typed text uses. Returns 503 if the configured provider's API key is missing.
+  typed text uses. Returns 503 if no
+  provider's API key is configured, 422 if transcription fails.
 
 ## Receipts (`/receipts`)
 
