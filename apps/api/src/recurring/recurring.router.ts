@@ -70,7 +70,7 @@ recurringRouter.post("/", async (req: AuthedRequest, res: Response) => {
   // not silently when the scheduler tries to generate it.
   try {
     calculateSplit(input.amount, input.splitMethod, input.payers, input.participants);
-  } catch (err) {
+  } catch (err: any) {
     if (err instanceof SplitValidationError) return res.status(422).json({ error: err.message, code: err.code });
     throw err;
   }

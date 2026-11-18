@@ -2,6 +2,7 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import { ExpenseModel } from "../db/models/Expense";
 import { GroupMemberModel } from "../db/models/Group";
+import { UserModel } from "../db/models/User";
 import { ContactModel } from "../db/models/Contact";
 import { ActivityEventModel } from "../db/models/ActivityEvent";
 import { AuthedRequest, requireAuth } from "../auth/auth.router";
@@ -48,11 +49,24 @@ expensesRouter.post("/", async (req: AuthedRequest, res: Response) => {
   const isMember = await assertMembership(input.groupId, req.userId!);
   if (!isMember) return res.status(403).json({ error: "Not a member of this group" });
 
-  // Every participant/payer must actually belong to the group — never trust
-  // client-provided user IDs blindly.
+  // Every participant/payer must actually belong to the group. If an existing registered
+  // user was resolved as a participant/payer, ensure they are activated as a group member.
   const activeMembers = await GroupMemberModel.find({ groupId: input.groupId, status: "ACTIVE" }).lean();
   const validMemberIds = new Set(activeMembers.map((m) => String(m.userId)));
   const allReferencedIds = [...input.payers.map((p) => p.userId), ...input.participants.map((p) => p.userId)];
+  const missingUserIds = allReferencedIds.filter((id) => !validMemberIds.has(id));
+  if (missingUserIds.length > 0) {
+    const existingUsers = await UserModel.find({ _id: { $in: missingUserIds }, isActive: true });
+    for (const u of existingUsers) {
+      await GroupMemberModel.findOneAndUpdate(
+        { groupId: input.groupId, userId: u._id },
+        { $set: { status: "ACTIVE" }, $setOnInsert: { role: "MEMBER" } },
+        { upsert: true }
+      );
+      validMemberIds.add(String(u._id));
+    }
+  }
+
   const invalidId = allReferencedIds.find((id) => !validMemberIds.has(id));
   if (invalidId) {
     return res.status(400).json({ error: `User ${invalidId} is not an active member of this group` });
