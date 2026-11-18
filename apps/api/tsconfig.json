@@ -10,7 +10,10 @@
     "rootDir": "src",
     "moduleResolution": "node",
     "resolveJsonModule": true,
-    "baseUrl": "."
+    "baseUrl": ".",
+    "paths": {
+      "@speak2split/shared": ["../../packages/shared/dist/src/index.d.ts"]
+    }
   },
   "include": ["src"]
 }
