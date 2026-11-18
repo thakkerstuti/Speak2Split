@@ -157,45 +157,62 @@ npm run dev:mobile
 
 ---
 
-## 🎙️ Speech-to-Text Integration (Groq Whisper)
+## 🎙️ Speech-to-Text Integration (AssemblyAI → Groq → Gemini)
 
-Speak2Split uses **Groq Whisper** (`whisper-large-v3-turbo`) as the primary Speech-to-Text (STT) provider for the voice expense flow, with **Gemini**, **OpenAI Whisper**, and **Google Speech-to-Text** as automatic fallbacks.
+The voice expense flow transcribes audio on the backend (`POST /voice/transcribe`) with this provider order:
 
-### 1. How to Obtain a Groq API Key
-1. Sign in at the [Groq Console](https://console.groq.com).
-2. Create an API key under **API Keys**.
-3. Put it in your backend `.env` file (`GROQ_API_KEY`). STT API keys stay on the backend and are never sent to the mobile client.
+| Order | Provider | Model | Env var |
+|---|---|---|---|
+| 1 (primary) | **AssemblyAI** pre-recorded API | Universal-2 (`speech_models: ["universal-2"]`, automatic language detection, 99 languages) | `ASSEMBLYAI_API_KEY` |
+| 2 | **Groq** | Whisper `whisper-large-v3-turbo` | `GROQ_API_KEY` |
+| 3 | **Gemini** | `gemini-2.5-flash` (override with `GEMINI_STT_MODEL`) | `GEMINI_API_KEY` |
 
-### 2. Backend Environment Variables
+Providers without a key are skipped. If a provider fails (network error, timeout, HTTP error, empty transcript), the next one is tried. OpenAI Whisper and Google Speech-to-Text are still implemented but are **never** used by the default cascade (they have no free tier); they run only if explicitly pinned with `STT_PROVIDER=whisper|google`.
+
+### 💸 Free tier only — no paid usage
+
+This project is configured to run on free allowances only. The code contains no billing or payment logic and never upgrades an account.
+
+**AssemblyAI**
+- New accounts get **$50 of free credits** (no expiry), usable for pre-recorded and streaming transcription. AssemblyAI advertises this as roughly 185 hours pre-recorded / 333 hours streaming; the exact hours depend on the model's current per-hour price (see [assemblyai.com/pricing](https://www.assemblyai.com/pricing)). Only **pre-recorded** transcription is used here. The allowance is finite — it is not unlimited.
+- **Do not add a credit card and do not enable auto-pay.** Without a card, AssemblyAI pauses API access when the balance reaches $0; it does not bill you.
+- When AssemblyAI reports an exhausted balance (HTTP 400 *"Your current account balance is negative…"*, or HTTP 402) or rejects the key (HTTP 401), the backend **switches AssemblyAI off for the rest of the server process** and goes straight to Groq/Gemini — it does not keep retrying. The log shows `[STT] Disabling AssemblyAI until server restart: …`. After a restart it is tried once more and switched off again if still exhausted.
+- A transcript job is submitted **at most once** per recording (submission is never retried), so a recording cannot be billed twice. AssemblyAI does not charge for failed transcripts.
+- Emergency switch: set `ASSEMBLYAI_ENABLED=false` to stop all AssemblyAI calls without removing the key.
+
+**Monitor AssemblyAI usage** in the [AssemblyAI dashboard](https://www.assemblyai.com/dashboard):
+- *Workspace → Settings → Billing*: remaining credit balance.
+- *Workspace → Manage → Cost and Usage*: hours transcribed and spend.
+- *Workspace → Settings → Alerts*: set a low-balance alert email.
+
+**Groq**: use the free plan (rate-limited, no card) and do not upgrade to a paid tier. When the free rate limit is hit, Groq returns HTTP 429 and the request falls through to Gemini.
+
+**Gemini**: create the key in [Google AI Studio](https://aistudio.google.com/apikey) on a Google Cloud project **without billing enabled**, which keeps it on the rate-limited free tier. If billing is enabled on that project, usage becomes paid.
+
+### Backend environment variables
 ```env
-# Leave empty for the automatic cascade: Groq -> Gemini -> OpenAI Whisper -> Google.
-# Providers without a key are skipped; a failing provider falls through to the next.
-STT_PROVIDER=
-GROQ_API_KEY=your_groq_api_key_here
-
-# Optional fallbacks
-GEMINI_API_KEY=
-OPENAI_API_KEY=
-GOOGLE_SPEECH_API_KEY=
+STT_PROVIDER=                 # empty = AssemblyAI -> Groq -> Gemini cascade
+ASSEMBLYAI_API_KEY=your_assemblyai_key
+GROQ_API_KEY=your_groq_key
+GEMINI_API_KEY=your_gemini_key
+# Optional
+ASSEMBLYAI_ENABLED=           # "false" disables AssemblyAI
+ASSEMBLYAI_MAX_WAIT_MS=45000  # max wait for an AssemblyAI transcript before falling back
+GEMINI_STT_MODEL=gemini-2.5-flash
 ```
-Setting `STT_PROVIDER` to `groq`, `gemini`, `whisper`, or `google` pins that single provider with no fallback.
+All keys stay on the backend and are never sent to the mobile app.
 
-### 3. How to Run the Backend
+### How it works
+1. The user picks a group, taps **Voice** and records; the app uploads the audio (m4a / mp4 / wav) to `/voice/transcribe`.
+2. AssemblyAI: the audio is uploaded (`POST /v2/upload`), a Universal-2 job is submitted (`POST /v2/transcript`), and the job is polled (`queued → processing → completed | error`) for up to `ASSEMBLYAI_MAX_WAIT_MS`. Transient poll errors are retried at most 3 times.
+3. On any AssemblyAI failure the backend tries Groq, then Gemini.
+4. The response is always `{ transcript, languageDetected? }`. The app sends the transcript to `/expenses/parse`; the user resolves ambiguous names, edits the draft, and confirms to save.
+
+### Testing
 ```bash
-npm run dev:api
+npm --prefix apps/api test
 ```
-
-### 4. How to Test the Voice Expense Flow
-1. **Automated Unit Tests**:
-   ```bash
-   npm --prefix apps/api test
-   ```
-   Runs mocked tests covering the Groq request, the fallback cascade, rate limits, network failures, error handling, and key sanitization, without using real API credits.
-2. **Voice Expense Flow**:
-   - User picks a group, taps Voice / Speak in the app, and records; the app uploads the audio to `/voice/transcribe`.
-   - The backend transcribes it with Groq Whisper (falling back to the next configured provider on failure) and returns the transcript.
-   - The app automatically sends the transcript to the existing NLP expense parser (`/expenses/parse`).
-   - Ambiguous names are resolved by tapping the intended person, the draft can be edited, and confirming creates the expense via the normal split pipeline.
+These are **mocked** tests (no real API calls, no credits used). They cover AssemblyAI success, missing key, upload failure, transcription failure, quota exhaustion, poll retries and timeouts, fallback to Groq and Gemini, all providers failing, and key redaction.
 
 
 ---

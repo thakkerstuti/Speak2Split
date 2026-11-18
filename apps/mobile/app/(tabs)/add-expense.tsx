@@ -154,6 +154,9 @@ export default function AddExpenseScreen() {
           "Content-Type": "multipart/form-data",
         },
         transformRequest: (d) => d,
+        // Server-side STT may poll AssemblyAI and then fall back to Groq/Gemini,
+        // which can exceed the default 30s client timeout.
+        timeout: 120000,
       });
 
       const text = (data.transcript || "").trim();
