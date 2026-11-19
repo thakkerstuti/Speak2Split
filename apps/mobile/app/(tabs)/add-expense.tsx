@@ -78,6 +78,9 @@ interface ParseDraft {
 }
 
 interface ParseResponse {
+  /** "needs_confirmation": the AI output didn't fully validate (or AI was unavailable) — the user must check it. */
+  status?: "ok" | "needs_confirmation";
+  issues?: string[];
   draft: ParseDraft;
   resolvedMentions: Record<string, Resolved>;
   needsDisambiguation: boolean;
@@ -306,7 +309,12 @@ function VoiceFlow({
       setPhase("understanding");
       const requested = opts.groupId ?? groupHint;
       const call = (gid?: string) =>
-        api.post<ParseResponse>("/expenses/parse", gid ? { groupId: gid, utterance: text } : { utterance: text }).then((r) => r.data);
+        api
+          .post<ParseResponse>("/expenses/parse", gid ? { groupId: gid, utterance: text } : { utterance: text }, {
+            // The server may try several AI providers (each with its own timeout) before answering.
+            timeout: 75000,
+          })
+          .then((r) => r.data);
       try {
         let data: ParseResponse;
         try {
@@ -720,6 +728,18 @@ function VoiceFlow({
             <Text style={styles.transcriptText}>“{transcript}”</Text>
             <Text style={styles.transcriptEdit}>Edit</Text>
           </Pressable>
+
+          {result.status === "needs_confirmation" ? (
+            <View style={styles.confirmBanner} accessibilityRole="alert">
+              <AlertCircle color="#B45309" size={18} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.confirmBannerTitle}>Please check these details</Text>
+                <Text style={styles.confirmBannerText}>
+                  I wasn't fully sure about this one, so some fields may be missing or wrong. Review the amount, people and split before saving.
+                </Text>
+              </View>
+            </View>
+          ) : null}
 
           <Card style={{ marginTop: spacing.md }}>
             {/* Group */}
@@ -1574,6 +1594,19 @@ const styles = StyleSheet.create({
   paidByName: { fontFamily: fonts.bold, fontSize: 15, color: colors.textPrimary, flexShrink: 1 },
   splitHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: spacing.md },
   linkText: { fontFamily: fonts.bold, fontSize: 13, color: colors.primary },
+  confirmBanner: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    alignItems: "flex-start",
+    marginTop: spacing.md,
+    backgroundColor: colors.warningSoft,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+  },
+  confirmBannerTitle: { fontFamily: fonts.bold, fontSize: 14, color: "#92400E" },
+  confirmBannerText: { fontFamily: fonts.medium, fontSize: 13, color: "#92400E", lineHeight: 18, marginTop: 2 },
   splitWarn: {
     flexDirection: "row",
     gap: spacing.sm,

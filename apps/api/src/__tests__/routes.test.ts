@@ -43,6 +43,9 @@ import { createApp } from "../app";
 import { JWT_SECRET } from "../config";
 import { runRecurringGeneration } from "../recurring/scheduler";
 import { fakeDb, Doc } from "./fake-db";
+import { saveFile } from "../documents/storage";
+import { clearAiEnv } from "../services/ai/__tests__/helpers";
+import { resetAiWarnings, resetAssemblyAiCircuitBreaker } from "../services/ai";
 
 // Voice parsing must not call any external LLM in tests — with no keys set,
 // the parser uses its offline heuristic.
@@ -649,3 +652,120 @@ describe("voice parsing with group inference (offline heuristic parser)", () => 
     expect(r.status).toBe(401);
   });
 });
+
+// ---------------------------------------------------------------------------
+describe("AI routes go through the service layer (providers mocked)", () => {
+  const savedEnv = { ...process.env };
+  const realFetch = global.fetch;
+  let warnSpy: jest.SpyInstance;
+  const GEMINI_KEY = "gem_route_secret_key";
+
+  beforeEach(() => {
+    clearAiEnv();
+    resetAiWarnings();
+    resetAssemblyAiCircuitBreaker();
+    warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    (saveFile as jest.Mock).mockResolvedValue({ storageKey: "receipt-key-1", sizeBytes: 3 });
+  });
+  afterEach(() => {
+    process.env = { ...savedEnv };
+    global.fetch = realFetch;
+    warnSpy.mockRestore();
+  });
+
+  /** Local requests reach the test server; anything else is a (mocked) provider call. */
+  function providers(handler: (url: string, init: any) => any) {
+    const fn = jest.fn(handler);
+    global.fetch = (async (url: any, init: any) =>
+      String(url).startsWith("http://127.0.0.1") ? realFetch(url, init) : fn(String(url), init)) as any;
+    return fn;
+  }
+  const gemini = (text: string) => ({ ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text }] } }] }) });
+
+  async function upload(path: string, user: Doc, field: string, fields: Record<string, string> = {}) {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+    fd.append(field, new Blob([Buffer.from("fake-bytes")], { type: field === "audio" ? "audio/m4a" : "image/jpeg" }), field === "audio" ? "a.m4a" : "r.jpg");
+    const res = await realFetch(`${base}${path}`, { method: "POST", headers: { authorization: `Bearer ${tokenFor(user)}` }, body: fd });
+    return { status: res.status, body: (await res.json()) as any };
+  }
+
+  it("POST /receipts/scan returns a validated draft with status ok", async () => {
+    process.env.GEMINI_API_KEY = GEMINI_KEY;
+    providers(() => gemini("CAFE COFFEE DAY\n12/03/2026\nTOTAL 320.00"));
+    const a = mkUser("Arjun");
+    const g = mkGroup("Flat", [a]);
+    const r = await upload("/receipts/scan", a, "image", { groupId: g._id });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ status: "ok", provider: "gemini", amount: 320, merchant: "CAFE COFFEE DAY", needsReview: false, receiptStorageKey: "receipt-key-1" });
+  });
+
+  it("POST /receipts/scan flags needs_confirmation for review and drops invalid fields", async () => {
+    process.env.GEMINI_API_KEY = GEMINI_KEY;
+    providers(() => gemini("BIG BAZAAR SUPERMARKET\nthanks"));
+    const a = mkUser("Arjun");
+    const g = mkGroup("Flat", [a]);
+    const r = await upload("/receipts/scan", a, "image", { groupId: g._id });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ status: "needs_confirmation", amount: null, needsReview: true });
+    expect(r.body.reviewMessage).toMatch(/review/);
+  });
+
+  it("POST /voice/transcribe returns the transcript and the provider used", async () => {
+    process.env.GEMINI_API_KEY = GEMINI_KEY;
+    providers(() => gemini("Dinner 1200 with Rahul"));
+    const a = mkUser("Arjun");
+    const r = await upload("/voice/transcribe", a, "audio");
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ transcript: "Dinner 1200 with Rahul", provider: "gemini" });
+  });
+
+  it("POST /voice/transcribe: friendly 503 with no env-var names when nothing is configured", async () => {
+    const fn = providers(() => {
+      throw new Error("no provider should be called");
+    });
+    const r = await upload("/voice/transcribe", mkUser("Arjun"), "audio");
+    expect(r.status).toBe(503);
+    expect(r.body.code).toBe("STT_UNAVAILABLE");
+    expect(JSON.stringify(r.body)).not.toMatch(/API_KEY|ASSEMBLY|GROQ|GEMINI/);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it("POST /voice/transcribe: friendly 422 without provider details or keys when providers fail", async () => {
+    process.env.GEMINI_API_KEY = GEMINI_KEY;
+    providers(() => ({ ok: false, status: 500, text: async () => `internal error, key ${GEMINI_KEY}` }));
+    const r = await upload("/voice/transcribe", mkUser("Arjun"), "audio");
+    expect(r.status).toBe(422);
+    expect(r.body.code).toBe("STT_FAILED");
+    const text = JSON.stringify(r.body);
+    expect(text).not.toContain(GEMINI_KEY);
+    expect(text).not.toMatch(/HTTP 500|gemini/i);
+    expect(warnSpy.mock.calls.flat().join(" ")).not.toContain(GEMINI_KEY);
+  });
+
+  it("POST /expenses/parse reports status ok when a provider returns a valid draft", async () => {
+    process.env.GEMINI_API_KEY = GEMINI_KEY;
+    providers(() =>
+      gemini(JSON.stringify({ title: "Dinner", amount: 1200, participantMentions: ["me", "Rahul"], payerMentions: [{ mention: "me", amountPaid: 1200 }] }))
+    );
+    const me = mkUser("Arjun");
+    const rahul = mkUser("Rahul");
+    const g = mkGroup("College", [me, rahul]);
+    const r = await call("POST", "/expenses/parse", me, { utterance: "Dinner 1200 with Rahul" });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ status: "ok", provider: "gemini", issues: [], groupId: g._id });
+    expect(r.body.draft).toMatchObject({ title: "Dinner", amount: 1200 });
+    expect(r.body.resolvedMentions.Rahul).toMatchObject({ status: "RESOLVED", userId: rahul._id });
+  });
+
+  it("POST /expenses/parse falls back to the offline heuristic as needs_confirmation", async () => {
+    const me = mkUser("Arjun");
+    mkGroup("Flat", [me]);
+    const r = await call("POST", "/expenses/parse", me, { utterance: "Coffee 200" });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ status: "needs_confirmation", provider: "heuristic" });
+    expect(r.body.draft.amount).toBe(200);
+    expect(r.body.issues[0]).toMatch(/offline/);
+  });
+});
+

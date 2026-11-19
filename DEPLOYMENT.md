@@ -61,8 +61,9 @@ enough that no calling code needs to change.
 |---|---|---|
 | Google Sign-In | GOOGLE_OAUTH_CLIENT_ID (backend), EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID (+ iOS/Android, mobile) | Same Web client ID on both sides |
 | Apple Sign-In | APPLE_SIGN_IN_CLIENT_ID (backend, = bundle ID) | Requires Apple Developer Program + "Sign In with Apple" capability |
-| Voice transcription | ASSEMBLYAI_API_KEY (primary), GROQ_API_KEY, GEMINI_API_KEY (fallbacks) | Leave STT_PROVIDER unset for the AssemblyAI -> Groq -> Gemini cascade. Free tier only: no card/auto-pay on AssemblyAI, Groq free plan, Gemini key from a project without billing. Monitor AssemblyAI credits at Dashboard -> Settings -> Billing. Remove any old GNANI_* vars |
-| Receipt OCR | GOOGLE_VISION_API_KEY | OCR_PROVIDER=google_vision |
+| Voice transcription | ASSEMBLYAI_API_KEY (primary), GROQ_API_KEY, GEMINI_API_KEY | Default chain AssemblyAI -> Groq -> Gemini (`AI_TRANSCRIBE_PROVIDER` / `AI_TRANSCRIBE_FALLBACK`). Free tier only: no card/auto-pay on AssemblyAI, Groq free plan, Gemini key from a project without billing. Monitor AssemblyAI credits at Dashboard -> Settings -> Billing. Set `AI_GEMINI_TRANSCRIBE_MODEL=gemini-3.5-flash-lite` |
+| Expense parsing | GEMINI_API_KEY, GROQ_API_KEY (OPENAI_API_KEY / DEEPSEEK_API_KEY optional, paid) | Default chain Gemini -> Groq -> OpenAI -> DeepSeek (`AI_PARSE_PROVIDER` / `AI_PARSE_FALLBACK`); offline heuristic if none respond |
+| Receipt OCR | GEMINI_API_KEY (free); GOOGLE_VISION_API_KEY / OPENAI_API_KEY optional, paid | Default chain Google Vision -> Gemini -> OpenAI (`AI_RECEIPT_PROVIDER` / `AI_RECEIPT_FALLBACK`); providers without a key are skipped |
 | Email notifications | RESEND_API_KEY, EMAIL_FROM_ADDRESS | Verify your sending domain in Resend first |
 | WhatsApp notifications | WHATSAPP_BUSINESS_PHONE_NUMBER_ID, WHATSAPP_BUSINESS_ACCESS_TOKEN | Requires a Meta Business account, approved message templates, and user opt-in per WhatsApp's policy |
 | Push notifications | none extra — Expo's push service needs only a valid device token, registered via POST /notifications/devices | |

@@ -2,15 +2,15 @@ import { Router, Response } from "express";
 import multer from "multer";
 import { AuthedRequest, requireAuth } from "../auth/auth.router";
 import { assertMembership } from "../groups/groups.router";
-import { runOcr, OcrNotConfiguredError, OcrError, redactSecrets } from "./ocr";
+import { parseReceipt, AiInvalidInputError, AiNotConfiguredError, AiProviderError, redactSecrets } from "../services/ai";
+import { saveFile } from "../documents/storage";
 
 export const OCR_MESSAGES = {
   unavailable: "Receipt scanning isn't available right now. You can still add the expense by typing it.",
   failed: "Couldn't read that receipt. Try a clearer, well-lit photo — or type the expense instead.",
   error: "Something went wrong while scanning. Please try again.",
+  review: "Some details may be incorrect. Please review before saving.",
 };
-import { extractReceiptFields } from "@speak2split/shared";
-import { saveFile } from "../documents/storage";
 
 export const receiptsRouter = Router();
 receiptsRouter.use(requireAuth);
@@ -21,12 +21,11 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX
 const LOW_CONFIDENCE_THRESHOLD = 0.5;
 
 /**
- * POST /receipts/scan — runs real OCR, then the tested field-extraction
- * heuristic, and returns an editable draft. This endpoint NEVER creates an
- * expense — per the spec, an uncertain AI interpretation must always go
- * through user confirmation first. The receipt image itself is saved to
- * storage regardless of extraction quality, so it can be attached to
- * whatever expense the user eventually confirms.
+ * POST /receipts/scan — reads the receipt through the AI service layer and
+ * returns an editable, validated draft. This endpoint NEVER creates an
+ * expense: "needs_confirmation" (and low-confidence) results are flagged for
+ * review, and nothing is saved until the user confirms in the app. The
+ * receipt image itself is stored so it can be attached later.
  */
 receiptsRouter.post("/scan", upload.single("image"), async (req: AuthedRequest, res: Response) => {
   const groupId = typeof req.body.groupId === "string" ? req.body.groupId : undefined;
@@ -38,33 +37,31 @@ receiptsRouter.post("/scan", upload.single("image"), async (req: AuthedRequest, 
   const file = (req as unknown as { file?: Express.Multer.File }).file;
   if (!file) return res.status(400).json({ error: "No image provided (expected multipart field 'image')" });
 
-  let rawText: string;
+  let result;
   try {
-    rawText = await runOcr(file.buffer);
+    result = await parseReceipt(file.buffer);
   } catch (err: any) {
-    // Provider details (already redacted in ocr.ts) go to server logs only —
-    // the app only ever receives a generic, user-friendly message.
+    // Provider details (already redacted) go to server logs only — the app
+    // only ever receives a generic, user-friendly message.
     // eslint-disable-next-line no-console
     console.warn("[receipts] OCR failed:", redactSecrets(String(err?.message ?? err)));
-    if (err instanceof OcrNotConfiguredError) {
-      return res.status(503).json({ error: OCR_MESSAGES.unavailable, code: "OCR_UNAVAILABLE" });
-    }
-    if (err instanceof OcrError) {
+    if (err instanceof AiNotConfiguredError) return res.status(503).json({ error: OCR_MESSAGES.unavailable, code: "OCR_UNAVAILABLE" });
+    if (err instanceof AiProviderError || err instanceof AiInvalidInputError) {
       return res.status(422).json({ error: OCR_MESSAGES.failed, code: "OCR_FAILED" });
     }
     return res.status(500).json({ error: OCR_MESSAGES.error, code: "OCR_ERROR" });
   }
 
-  const extraction = extractReceiptFields(rawText);
   const stored = await saveFile(file.buffer, file.originalname || "receipt.jpg");
+  const needsReview = result.status === "needs_confirmation" || result.data.confidence < LOW_CONFIDENCE_THRESHOLD;
 
   return res.json({
-    ...extraction,
+    ...result.data,
+    status: result.status,
+    issues: result.issues,
+    provider: result.provider,
     receiptStorageKey: stored.storageKey,
-    needsReview: extraction.confidence < LOW_CONFIDENCE_THRESHOLD,
-    reviewMessage:
-      extraction.confidence < LOW_CONFIDENCE_THRESHOLD
-        ? "Some details may be incorrect. Please review before saving."
-        : null,
+    needsReview,
+    reviewMessage: needsReview ? OCR_MESSAGES.review : null,
   });
 });

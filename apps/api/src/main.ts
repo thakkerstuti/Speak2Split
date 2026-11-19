@@ -3,6 +3,7 @@ import { createApp } from "./app";
 import { connectMongo } from "./db/mongoose";
 import { startRecurringScheduler } from "./recurring/scheduler";
 import { initRealtime } from "./realtime/socket";
+import { describeAiConfig } from "./services/ai";
 
 // Last-resort safety net: route errors are already forwarded to the error
 // middleware (see http/async-errors.ts); anything else that slips through is
@@ -25,6 +26,8 @@ connectMongo()
   .then(() => {
     // eslint-disable-next-line no-console
     console.log("Connected to MongoDB");
+    // Which AI provider chain serves each function (and which providers lack a key).
+    for (const line of describeAiConfig()) console.log(`[AI] ${line}`);
     startRecurringScheduler();
     httpServer.listen(port, () => {
       // eslint-disable-next-line no-console

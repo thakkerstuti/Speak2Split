@@ -157,62 +157,69 @@ npm run dev:mobile
 
 ---
 
-## 🎙️ Speech-to-Text Integration (AssemblyAI → Groq → Gemini)
+## 🤖 AI Service Layer (speech, expense parsing, receipts)
 
-The voice expense flow transcribes audio on the backend (`POST /voice/transcribe`) with this provider order:
+All AI features go through one server-side layer, `apps/api/src/services/ai/`. Routes call only these functions — never a provider directly:
 
-| Order | Provider | Model | Env var |
+| Function | Used by | Default provider → fallbacks | Env vars |
 |---|---|---|---|
-| 1 (primary) | **AssemblyAI** pre-recorded API | Universal-2 (`speech_models: ["universal-2"]`, automatic language detection, 99 languages) | `ASSEMBLYAI_API_KEY` |
-| 2 | **Groq** | Whisper `whisper-large-v3-turbo` | `GROQ_API_KEY` |
-| 3 | **Gemini** | `gemini-2.5-flash` (override with `GEMINI_STT_MODEL`) | `GEMINI_API_KEY` |
+| `transcribe(audio)` | `POST /voice/transcribe` | **AssemblyAI** Universal-2 → Groq Whisper → Gemini | `AI_TRANSCRIBE_PROVIDER`, `AI_TRANSCRIBE_FALLBACK` |
+| `parseExpense(text, context)` | `POST /expenses/parse` | **Gemini** → Groq → OpenAI → DeepSeek → offline heuristic | `AI_PARSE_PROVIDER`, `AI_PARSE_FALLBACK` |
+| `parseReceipt(image)` | `POST /receipts/scan` | **Google Vision** → Gemini → OpenAI | `AI_RECEIPT_PROVIDER`, `AI_RECEIPT_FALLBACK` |
 
-Providers without a key are skipped. If a provider fails (network error, timeout, HTTP error, empty transcript), the next one is tried. OpenAI Whisper and Google Speech-to-Text are still implemented but are **never** used by the default cascade (they have no free tier); they run only if explicitly pinned with `STT_PROVIDER=whisper|google`.
+- **Fallbacks:** comma-separated, tried in order when a provider errors or times out. Providers without an API key are skipped.
+- **Validation:** every structured result is validated with Zod. If a reply fails validation, the same provider is asked once more (told what was wrong); if it fails again, the API returns `status: "needs_confirmation"` with only the fields that passed. The offline heuristic is a last resort and is **always** `needs_confirmation`. The app shows a "Please check these details" banner, and nothing is saved until the user confirms.
+- **Keys:** only in server env vars. API keys are sent in request headers (never URLs) and are scrubbed from every error and log line.
+- **Startup log:** the API logs each function's chain at boot, e.g. `[AI] parseReceipt: google_vision (no key) → gemini → openai (no key)`.
 
 ### 💸 Free tier only — no paid usage
 
-This project is configured to run on free allowances only. The code contains no billing or payment logic and never upgrades an account.
+This project is configured to run on free allowances only. The code contains no billing or payment logic and never upgrades an account. OpenAI, DeepSeek, Google Vision and Google Speech are paid services; they're only used if you set their keys.
 
 **AssemblyAI**
 - New accounts get **$50 of free credits** (no expiry), usable for pre-recorded and streaming transcription. AssemblyAI advertises this as roughly 185 hours pre-recorded / 333 hours streaming; the exact hours depend on the model's current per-hour price (see [assemblyai.com/pricing](https://www.assemblyai.com/pricing)). Only **pre-recorded** transcription is used here. The allowance is finite — it is not unlimited.
 - **Do not add a credit card and do not enable auto-pay.** Without a card, AssemblyAI pauses API access when the balance reaches $0; it does not bill you.
-- When AssemblyAI reports an exhausted balance (HTTP 400 *"Your current account balance is negative…"*, or HTTP 402) or rejects the key (HTTP 401), the backend **switches AssemblyAI off for the rest of the server process** and goes straight to Groq/Gemini — it does not keep retrying. The log shows `[STT] Disabling AssemblyAI until server restart: …`. After a restart it is tried once more and switched off again if still exhausted.
-- A transcript job is submitted **at most once** per recording (submission is never retried), so a recording cannot be billed twice. AssemblyAI does not charge for failed transcripts.
+- When AssemblyAI reports an exhausted balance (HTTP 400 *"Your current account balance is negative…"*, or HTTP 402) or rejects the key (HTTP 401), the backend **switches AssemblyAI off for the rest of the server process** and goes straight to the fallbacks — it does not keep retrying. The log shows `[AI] Disabling AssemblyAI until server restart: …`.
+- A transcript job is submitted **at most once** per recording, so a recording cannot be billed twice. AssemblyAI does not charge for failed transcripts.
 - Emergency switch: set `ASSEMBLYAI_ENABLED=false` to stop all AssemblyAI calls without removing the key.
 
-**Monitor AssemblyAI usage** in the [AssemblyAI dashboard](https://www.assemblyai.com/dashboard):
-- *Workspace → Settings → Billing*: remaining credit balance.
-- *Workspace → Manage → Cost and Usage*: hours transcribed and spend.
-- *Workspace → Settings → Alerts*: set a low-balance alert email.
+**Monitor AssemblyAI usage** in the [AssemblyAI dashboard](https://www.assemblyai.com/dashboard): *Workspace → Settings → Billing* (balance), *Workspace → Manage → Cost and Usage* (hours and spend), *Workspace → Settings → Alerts* (low-balance email).
 
-**Groq**: use the free plan (rate-limited, no card) and do not upgrade to a paid tier. When the free rate limit is hit, Groq returns HTTP 429 and the request falls through to Gemini.
+**Groq**: use the free plan (rate-limited, no card). When the free rate limit is hit, Groq returns HTTP 429 and the request falls through to the next provider.
 
-**Gemini**: create the key in [Google AI Studio](https://aistudio.google.com/apikey) on a Google Cloud project **without billing enabled**, which keeps it on the rate-limited free tier. If billing is enabled on that project, usage becomes paid.
+**Gemini**: create the key in [Google AI Studio](https://aistudio.google.com/apikey) on a Google Cloud project **without billing enabled**, which keeps it on the rate-limited free tier.
 
 ### Backend environment variables
 ```env
-STT_PROVIDER=                 # empty = AssemblyAI -> Groq -> Gemini cascade
+# Keys (free-tier setup)
 ASSEMBLYAI_API_KEY=your_assemblyai_key
 GROQ_API_KEY=your_groq_key
 GEMINI_API_KEY=your_gemini_key
-# Optional
+# Optional — leave unset for the defaults in the table above
+AI_TRANSCRIBE_PROVIDER=assemblyai
+AI_TRANSCRIBE_FALLBACK=groq,gemini
+AI_PARSE_PROVIDER=gemini
+AI_PARSE_FALLBACK=groq,openai,deepseek
+AI_RECEIPT_PROVIDER=google_vision
+AI_RECEIPT_FALLBACK=gemini,openai
+AI_GEMINI_MODEL=gemini-3.5-flash-lite
+AI_GEMINI_TRANSCRIBE_MODEL=gemini-3.5-flash-lite
 ASSEMBLYAI_ENABLED=           # "false" disables AssemblyAI
-ASSEMBLYAI_MAX_WAIT_MS=45000  # max wait for an AssemblyAI transcript before falling back
-GEMINI_STT_MODEL=gemini-2.5-flash
+ASSEMBLYAI_MAX_WAIT_MS=45000
 ```
-All keys stay on the backend and are never sent to the mobile app.
+Old names (`STT_PROVIDER`, `OCR_PROVIDER`, `GEMINI_MODEL`, `GEMINI_STT_MODEL`, `GROQ_KEY`, `GOOGLE_API_KEY`) still work for one release and log a deprecation warning. `ANTHROPIC_API_KEY` and `EXPENSE_PARSER_MODEL` are no longer used.
 
-### How it works
-1. The user taps the center **Speak** button (no group selection needed) and talks; recording stops automatically when they finish, and the app uploads the audio (m4a / mp4 / wav) to `/voice/transcribe`.
-2. AssemblyAI: the audio is uploaded (`POST /v2/upload`), a Universal-2 job is submitted (`POST /v2/transcript`), and the job is polled (`queued → processing → completed | error`) for up to `ASSEMBLYAI_MAX_WAIT_MS`. Transient poll errors are retried at most 3 times.
-3. On any AssemblyAI failure the backend tries Groq, then Gemini.
-4. The response is always `{ transcript, languageDetected? }`. The app sends the transcript to `/expenses/parse` without a group; the server infers the group (spoken group name, then the people mentioned, then recency). The user reviews one card (group, amount, title, category, payer, per-person split), resolves any ambiguous names, and saves.
+### How voice entry works
+1. The user taps the center **Speak** button (no group selection needed) and talks; recording stops automatically when they finish, and the app uploads the audio to `/voice/transcribe`.
+2. `transcribe()` tries AssemblyAI (upload → Universal-2 job → poll), then Groq, then Gemini, and returns `{ transcript, languageDetected?, provider }`.
+3. The app sends the transcript to `/expenses/parse`; `parseExpense()` returns a validated draft (`status: "ok"`) or a `needs_confirmation` draft, and the server infers the group.
+4. The user reviews one card (group, amount, title, category, payer, per-person split), resolves ambiguous names, and saves.
 
 ### Testing
 ```bash
 npm --prefix apps/api test
 ```
-These are **mocked** tests (no real API calls, no credits used). They cover AssemblyAI success, missing key, upload failure, transcription failure, quota exhaustion, poll retries and timeouts, fallback to Groq and Gemini, all providers failing, and key redaction.
+All AI tests use **mocked** providers (no real API calls, no credits used): provider selection and fallback order, timeouts, validation retry and `needs_confirmation`, the offline heuristic, AssemblyAI quota handling, key redaction, deprecated env aliases, and a boundary test that fails if any code outside `services/ai` calls a provider or reads an AI key.
 
 
 ---

@@ -8,7 +8,8 @@ import { ActivityEventModel } from "../db/models/ActivityEvent";
 import { AuthedRequest, requireAuth } from "../auth/auth.router";
 import { assertMembership } from "../groups/groups.router";
 import { objectId, validateObjectIdParams } from "../validation";
-import { calculateSplit, SplitValidationError, parseExpenseUtterance, resolveNames } from "@speak2split/shared";
+import { calculateSplit, SplitValidationError, resolveNames } from "@speak2split/shared";
+import { parseExpense, AiInvalidInputError } from "../services/ai";
 import { broadcastToGroup } from "../realtime/socket";
 import { buildCandidatePoolForGroup } from "../resolution/resolution.router";
 import { notifyGroupMembers } from "../notifications/notification.service";
@@ -175,12 +176,18 @@ expensesRouter.post("/parse", async (req: AuthedRequest, res: Response) => {
       if (!isMember) return res.status(403).json({ error: "Not a member of this group" });
     }
 
-    let draft;
+    // AI service layer: validated draft, or "needs_confirmation" with only the
+    // fields that passed validation. Nothing here is ever saved — POST /expenses
+    // is the only write, after the user confirms the draft in the app.
+    let parsedResult;
     try {
-      draft = await parseExpenseUtterance(utterance);
+      parsedResult = await parseExpense(utterance, { defaultCurrency: "INR" });
     } catch (err) {
-      return res.status(422).json({ error: `Could not understand that expense: ${(err as Error).message}` });
+      if (err instanceof AiInvalidInputError) return res.status(422).json({ error: err.message, code: "INVALID_TEXT" });
+      throw err;
     }
+    const draft = parsedResult.data;
+    const aiMeta = { status: parsedResult.status, issues: parsedResult.issues, provider: parsedResult.provider };
 
     const selfAliases = new Set(["me", "i", "myself"]);
     const allMentions = [...draft.payerMentions.map((p) => p.mention), ...draft.participantMentions].filter(
@@ -195,6 +202,7 @@ expensesRouter.post("/parse", async (req: AuthedRequest, res: Response) => {
       const needsDisambiguation = Object.values(resolvedMentions).some((r: any) => r.status !== "RESOLVED");
       const group = await GroupModel.findById(requestedGroupId).lean();
       return res.json({
+        ...aiMeta,
         draft,
         resolvedMentions,
         needsDisambiguation,
@@ -260,6 +268,7 @@ expensesRouter.post("/parse", async (req: AuthedRequest, res: Response) => {
     const needsDisambiguation = Object.values(resolvedMentions).some((r: any) => r.status !== "RESOLVED");
 
     return res.json({
+      ...aiMeta,
       draft,
       resolvedMentions,
       needsDisambiguation,

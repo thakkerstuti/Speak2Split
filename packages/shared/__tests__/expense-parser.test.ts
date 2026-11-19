@@ -1,4 +1,4 @@
-import { parseExpenseUtterance, ExpenseParseError, LlmClient } from "../src/parsing/expense-parser";
+import { parseExpenseUtterance, ExpenseParseError, LlmClient, heuristicExpenseDraft } from "../src/parsing/expense-parser";
 
 class FakeLlmClient implements LlmClient {
   constructor(private readonly response: string) {}
@@ -100,5 +100,36 @@ describe("expense parser", () => {
     const draft = await parseExpenseUtterance("Vanshika paid 1000 and I paid 1500 for the hotel.", fake);
     expect(draft.payerMentions).toHaveLength(2);
     expect(draft.payerMentions.reduce((s, p) => s + (p.amountPaid ?? 0), 0)).toBe(2500);
+  });
+});
+
+describe("offline heuristic (used by the API only when no AI provider is reachable)", () => {
+  it("extracts amount, category and mentioned people", () => {
+    const draft = heuristicExpenseDraft("Dinner 500 with Rahul");
+    expect(draft.amount).toBe(500);
+    expect(draft.category).toBe("food");
+    expect(draft.splitMethod).toBe("EQUAL");
+    expect(draft.participantMentions).toEqual(["me", "Rahul"]);
+    expect(draft.ambiguityNotes[0]).toMatch(/offline/);
+  });
+});
+
+describe("no provider calls in the shared package", () => {
+  it("contains no network code, provider URLs or API-key env reads", () => {
+    const fs = require("fs") as typeof import("fs");
+    const path = require("path") as typeof import("path");
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (p.endsWith(".ts")) files.push(p);
+      }
+    };
+    walk(path.join(__dirname, "../src"));
+    const offenders = files.filter((f) =>
+      /\bfetch\(|https?:\/\/api\.|googleapis\.com|process\.env\.[A-Z_]*(KEY|TOKEN)/.test(fs.readFileSync(f, "utf8"))
+    );
+    expect(offenders).toEqual([]);
   });
 });

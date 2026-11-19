@@ -1,5 +1,5 @@
 /**
- * Natural Language Expense Parser
+ * Natural Language Expense Parser — pure, network-free pieces.
  *
  * Converts a raw utterance (typed or transcribed from voice) into a
  * structured, but NOT yet person-resolved, expense draft. Name resolution
@@ -7,14 +7,9 @@
  * — this parser only extracts *raw name mentions* as strings; it never
  * decides which actual person "Vanshika" refers to.
  *
- * This calls out to an LLM (Claude, via the Anthropic Messages API) with a
- * strict JSON-only response contract, because regex/keyword parsing cannot
- * reliably handle the range of phrasing in the spec ("I paid the whole bill
- * but split it equally between the four of us", multi-payer sentences,
- * implicit dates like "yesterday", etc).
- *
- * Requires ANTHROPIC_API_KEY to be set server-side. Never call this from
- * the client — the API key must never leave the backend.
+ * Provider calls (Gemini, Groq, OpenAI, DeepSeek) live ONLY in the API's AI
+ * service layer (apps/api/src/services/ai). This module provides the prompt,
+ * the LlmClient contract, output normalization and the offline heuristic.
  */
 
 export interface ParsedExpenseDraft {
@@ -44,7 +39,7 @@ export interface RawPayerMention {
   amountPaid: number | null; // null if not explicitly stated (implies "the rest" or needs inference)
 }
 
-const SYSTEM_PROMPT = `You are the expense-parsing engine inside Speak2Split, a shared-expense app.
+export const EXPENSE_PARSER_SYSTEM_PROMPT = `You are the expense-parsing engine inside Speak2Split, a shared-expense app.
 Extract a structured expense from the user's natural-language sentence about a shared expense.
 
 Rules:
@@ -75,187 +70,10 @@ JSON schema:
   "ambiguityNotes": string[]
 }`;
 
-/** Current stable, free-tier Gemini model (Google's named replacement for 2.5 Flash). */
-export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
-
 export interface LlmClient {
   /** Returns the raw text content of the model's response. */
   complete(system: string, userMessage: string): Promise<string>;
 }
-
-/**
- * Multi-provider LLM client that automatically detects available API keys on the server
- * (Gemini, Groq, OpenAI, Anthropic, DeepSeek) and falls back gracefully.
- */
-export class MultiProviderLlmClient implements LlmClient {
-  async complete(system: string, userMessage: string): Promise<string> {
-    const errors: string[] = [];
-
-    // 1. Try Gemini API if GEMINI_API_KEY or GOOGLE_API_KEY is configured
-    const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (geminiKey) {
-      try {
-        // gemini-1.5-flash has been shut down; GEMINI_MODEL overrides the default.
-        const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-          {
-            method: "POST",
-            // Key in a header, never in the URL (URLs end up in logs).
-            headers: { "content-type": "application/json", "x-goog-api-key": geminiKey },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: `${system}\n\nUser input: ${userMessage}` }] }],
-              generationConfig: { responseMimeType: "application/json" },
-            }),
-          }
-        );
-        if (res.ok) {
-          const json = (await res.json()) as any;
-          const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) return text;
-        } else {
-          const errText = await res.text();
-          errors.push(`Gemini HTTP ${res.status}: ${errText.split(geminiKey).join("***").slice(0, 300)}`);
-        }
-      } catch (err: any) {
-        errors.push(`Gemini error: ${err?.message}`);
-      }
-    }
-
-    // 2. Try Groq API if GROQ_API_KEY is configured
-    const groqKey = process.env.GROQ_API_KEY || process.env.GROQ_KEY;
-    if (groqKey) {
-      try {
-        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${groqKey}`,
-          },
-          body: JSON.stringify({
-            model: "llama-3.3-70b-versatile",
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: userMessage },
-            ],
-            response_format: { type: "json_object" },
-          }),
-        });
-        if (res.ok) {
-          const json = (await res.json()) as any;
-          const text = json.choices?.[0]?.message?.content;
-          if (text) return text;
-        } else {
-          const errText = await res.text();
-          errors.push(`Groq HTTP ${res.status}: ${errText}`);
-        }
-      } catch (err: any) {
-        errors.push(`Groq error: ${err?.message}`);
-      }
-    }
-
-    // 3. Try OpenAI API if OPENAI_API_KEY is configured
-    const openaiKey = process.env.OPENAI_API_KEY;
-    if (openaiKey) {
-      try {
-        const res = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${openaiKey}`,
-          },
-          body: JSON.stringify({
-            model: "gpt-4o-mini",
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: userMessage },
-            ],
-            response_format: { type: "json_object" },
-          }),
-        });
-        if (res.ok) {
-          const json = (await res.json()) as any;
-          const text = json.choices?.[0]?.message?.content;
-          if (text) return text;
-        } else {
-          const errText = await res.text();
-          errors.push(`OpenAI HTTP ${res.status}: ${errText}`);
-        }
-      } catch (err: any) {
-        errors.push(`OpenAI error: ${err?.message}`);
-      }
-    }
-
-    // 4. Try Anthropic API if ANTHROPIC_API_KEY is configured
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    if (anthropicKey) {
-      try {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-api-key": anthropicKey,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify({
-            model: process.env.EXPENSE_PARSER_MODEL || "claude-3-5-sonnet-20241022",
-            max_tokens: 1024,
-            system,
-            messages: [{ role: "user", content: userMessage }],
-          }),
-        });
-        if (res.ok) {
-          const json = (await res.json()) as any;
-          const textBlock = json.content?.find((b: any) => b.type === "text");
-          if (textBlock?.text) return textBlock.text;
-        } else {
-          const errText = await res.text();
-          errors.push(`Anthropic HTTP ${res.status}: ${errText}`);
-        }
-      } catch (err: any) {
-        errors.push(`Anthropic error: ${err?.message}`);
-      }
-    }
-
-    // 5. Try DeepSeek API if DEEPSEEK_API_KEY is configured
-    const deepseekKey = process.env.DEEPSEEK_API_KEY;
-    if (deepseekKey) {
-      try {
-        const res = await fetch("https://api.deepseek.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${deepseekKey}`,
-          },
-          body: JSON.stringify({
-            model: "deepseek-chat",
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: userMessage },
-            ],
-            response_format: { type: "json_object" },
-          }),
-        });
-        if (res.ok) {
-          const json = (await res.json()) as any;
-          const text = json.choices?.[0]?.message?.content;
-          if (text) return text;
-        } else {
-          const errText = await res.text();
-          errors.push(`DeepSeek HTTP ${res.status}: ${errText}`);
-        }
-      } catch (err: any) {
-        errors.push(`DeepSeek error: ${err?.message}`);
-      }
-    }
-
-    // If all LLM calls failed or no keys are configured, return synthesized JSON via heuristic extraction
-    return synthesizeHeuristicJson(userMessage, errors);
-  }
-}
-
-/** Legacy alias for backwards compatibility */
-export class AnthropicLlmClient extends MultiProviderLlmClient {}
 
 export class ExpenseParseError extends Error {
   constructor(message: string, public readonly rawResponse?: string) {
@@ -264,7 +82,7 @@ export class ExpenseParseError extends Error {
   }
 }
 
-function stripCodeFences(text: string): string {
+export function stripCodeFences(text: string): string {
   return text
     .trim()
     .replace(/^```(?:json)?/i, "")
@@ -272,7 +90,11 @@ function stripCodeFences(text: string): string {
     .trim();
 }
 
-function synthesizeHeuristicJson(utterance: string, previousErrors: string[]): string {
+/**
+ * Offline, keyword-based extraction used when no AI provider is reachable.
+ * Its output is a best guess — callers must always ask the user to confirm it.
+ */
+export function heuristicExpenseDraft(utterance: string): ParsedExpenseDraft {
   const text = utterance.trim();
   
   // Extract amount
@@ -317,12 +139,9 @@ function synthesizeHeuristicJson(utterance: string, previousErrors: string[]): s
     }
   }
 
-  const ambiguityNotes: string[] = [];
-  if (previousErrors.length > 0) {
-    ambiguityNotes.push(`Extracted using smart heuristics. External LLMs failed or hit quota limits.`);
-  }
+  const ambiguityNotes: string[] = ["Extracted offline without AI — please check every field."];
 
-  return JSON.stringify({
+  return {
     title,
     amount,
     currency: "INR",
@@ -330,26 +149,23 @@ function synthesizeHeuristicJson(utterance: string, previousErrors: string[]): s
     payerMentions,
     participantMentions,
     splitMethod: "EQUAL",
-    exactShares: null,
-    percentageShares: null,
-    shareUnits: null,
     dateHint: null,
     notes: null,
-    recurring: { isRecurring: false, frequency: null },
+    recurring: { isRecurring: false },
     parseConfidence: amount ? 0.8 : 0.4,
     ambiguityNotes,
-  });
+  };
 }
 
 export async function parseExpenseUtterance(
   utterance: string,
-  llm: LlmClient = new MultiProviderLlmClient()
+  llm: LlmClient
 ): Promise<ParsedExpenseDraft> {
   if (!utterance || utterance.trim().length === 0) {
     throw new ExpenseParseError("Empty utterance provided to expense parser");
   }
 
-  const raw = await llm.complete(SYSTEM_PROMPT, utterance);
+  const raw = await llm.complete(EXPENSE_PARSER_SYSTEM_PROMPT, utterance);
   const cleaned = stripCodeFences(raw);
 
   let parsed: ParsedExpenseDraft;

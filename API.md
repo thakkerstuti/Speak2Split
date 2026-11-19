@@ -42,7 +42,7 @@ success.
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/expenses` | Server computes the split via `calculateSplit()` — client totals are re-validated, never trusted |
-| POST | `/expenses/parse` | `{ utterance, groupId? }` — NLP extraction + name resolution; returns a draft only, never creates an expense. If `groupId` is omitted the group is inferred (spoken group name > mentioned members > most recent activity) and returned as `groupId`, `groupName` and `groupInference: { inferred, confidence, reason, alternatives }`. 422 `NO_GROUPS` if the user has no groups |
+| POST | `/expenses/parse` | `{ utterance, groupId? }` — AI extraction (`parseExpense`) + name resolution; returns a draft only, never creates an expense. Response includes `status` (`ok` or `needs_confirmation` — the draft then holds only validated fields and must be confirmed), `issues` and `provider` (`heuristic` = offline fallback). If `groupId` is omitted the group is inferred (spoken group name > mentioned members > most recent activity) and returned as `groupId`, `groupName` and `groupInference: { inferred, confidence, reason, alternatives }`. 422 `NO_GROUPS` if the user has no groups |
 | GET | `/expenses/group/:groupId` | Expense list with payers/participants |
 
 ## Name resolution (`/resolve-names`)
@@ -109,22 +109,25 @@ All mutations broadcast shopping_item_updated over Socket.IO to the group room.
 
 ## Voice (`/voice`)
 
-- `POST /voice/transcribe` — multipart audio field. Real STT call
-  (AssemblyAI Universal-2 primary, falling back to Groq Whisper, then
-  Gemini; or a single provider pinned via STT_PROVIDER). Returns
-  `{ transcript, languageDetected? }` only — never runs NLP/resolution
-  itself. Feed the transcript into POST /expenses/parse next, the same path
-  typed text uses. Returns 503 if no
-  provider's API key is configured, 422 if transcription fails.
+- `POST /voice/transcribe` — multipart `audio` field. Calls `transcribe()` in
+  the AI service layer (default AssemblyAI → Groq → Gemini; see
+  `AI_TRANSCRIBE_PROVIDER` / `AI_TRANSCRIBE_FALLBACK`). Returns
+  `{ transcript, languageDetected?, provider }` only — feed the transcript
+  into POST /expenses/parse next. Errors are generic and never include
+  provider details: 503 `STT_UNAVAILABLE` (no provider configured), 422
+  `STT_FAILED` (all providers failed) or `EMPTY_AUDIO`.
 
 ## Receipts (`/receipts`)
 
-- `POST /receipts/scan` — multipart image field + groupId. Real OCR call
-  (Google Vision, per OCR_PROVIDER), then the tested extractReceiptFields
-  heuristic. Returns a draft with confidence, amountSource, and
-  needsReview/reviewMessage when confidence is low. Never creates an
+- `POST /receipts/scan` — multipart `image` field + `groupId`. Calls
+  `parseReceipt()` (default Google Vision → Gemini → OpenAI; see
+  `AI_RECEIPT_PROVIDER` / `AI_RECEIPT_FALLBACK`), which extracts fields with
+  the tested extractReceiptFields heuristic and validates them with Zod.
+  Returns the fields plus `status` (`ok` / `needs_confirmation`), `issues`,
+  `provider`, `receiptStorageKey`, and `needsReview`/`reviewMessage`
+  (set for `needs_confirmation` or low confidence). Never creates an
   expense — the client must POST to /expenses after the user confirms.
-  Returns 503 if the OCR provider's API key is missing.
+  Errors: 503 `OCR_UNAVAILABLE`, 422 `OCR_FAILED` (generic messages only).
 
 ## Notifications (`/notifications`)
 
