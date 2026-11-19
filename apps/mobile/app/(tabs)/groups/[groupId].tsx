@@ -5,7 +5,7 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { Download, Mic, UserPlus, ShoppingCart, LayoutTemplate, FileText, ArrowRight, Receipt, CheckCircle2 } from "lucide-react-native";
-import { groupsApi, settlementsApi, expensesApi, exportsApi, SuggestedSettlement } from "../../../lib/api";
+import { groupsApi, settlementsApi, expensesApi, exportsApi, contactsApi, SuggestedSettlement } from "../../../lib/api";
 import { useAuthStore } from "../../../store/auth-store";
 import { useGroupRealtime } from "../../../lib/useGroupRealtime";
 import { colors, spacing, radius, fonts, shadows } from "../../../lib/theme";
@@ -48,13 +48,32 @@ export default function GroupDetailScreen() {
   };
 
   const addMemberMutation = useMutation({
-    mutationFn: () => groupsApi.addMember(groupId!, memberEmail.trim()),
+    mutationFn: async () => {
+      const input = memberEmail.trim();
+      if (input.includes("@")) return groupsApi.addMember(groupId!, input);
+      // A name: match one of your People. Those without an account join as guests.
+      // Names alone can clash, so ambiguous matches ask for more detail.
+      const needle = input.toLowerCase();
+      const memberIds = new Set(members.map((m) => m.id));
+      const people = await contactsApi.list();
+      const exact = people.filter((c) => c.displayName.toLowerCase() === needle || c.firstName?.toLowerCase() === needle);
+      const matches = exact.length ? exact : people.filter((c) => c.displayName.toLowerCase().includes(needle));
+      if (matches.length === 1) {
+        const c = matches[0];
+        if (c.targetUserId && memberIds.has(c.targetUserId)) throw new Error(`${c.displayName} is already in this group.`);
+        return groupsApi.addMemberByContact(groupId!, c.id);
+      }
+      if (matches.length > 1) {
+        throw new Error(`More than one person matches "${input}" (${matches.map((c) => c.displayName).join(", ")}). Type the full name or their email.`);
+      }
+      throw new Error(`"${input}" isn't in your People yet. Add them on the People screen (name + phone), then add them here.`);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["group", groupId] });
       setAddMemberOpen(false);
       setMemberEmail("");
     },
-    onError: (err: any) => Alert.alert("Couldn't add member", err?.response?.data?.error ?? "Please try again."),
+    onError: (err: any) => Alert.alert("Couldn't add member", err?.response?.data?.error ?? err?.message ?? "Please try again."),
   });
 
   // Records the payment and immediately marks it complete so balances update.
@@ -278,14 +297,14 @@ export default function GroupDetailScreen() {
         visible={addMemberOpen}
         onClose={() => setAddMemberOpen(false)}
         title="Add a member"
-        subtitle="Enter the email they use for Speak2Split."
+        subtitle="Type a name from your People, or the email they use for Speak2Split."
       >
         <TextInput
           style={styles.input}
-          placeholder="friend@example.com"
+          placeholder="Avni or friend@example.com"
           placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
-          keyboardType="email-address"
+          autoCorrect={false}
           autoFocus
           value={memberEmail}
           onChangeText={setMemberEmail}

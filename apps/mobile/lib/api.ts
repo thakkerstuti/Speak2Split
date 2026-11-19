@@ -133,6 +133,9 @@ export const groupsApi = {
   /** Adds someone the user already knows (a contact or co-member elsewhere). */
   addMemberById: (groupId: string, userId: string) =>
     api.post(`/groups/${groupId}/members`, { userId }).then((r) => r.data),
+  /** Adds one of your contacts; people without an account join as guests. */
+  addMemberByContact: (groupId: string, contactId: string) =>
+    api.post(`/groups/${groupId}/members`, { contactId }).then((r) => r.data),
 };
 
 export const expensesApi = {

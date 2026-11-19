@@ -299,6 +299,49 @@ describe("explicit add-member by userId", () => {
     expect(r.status).toBe(403);
     expect(isMember(g, outsider)).toBe(false);
   });
+
+  it("adds a contact without an account as a guest member (no login, no email shown)", async () => {
+    const a = mkUser("Arjun");
+    const g = mkGroup("Goa", [a]);
+    const c = contacts.insert({ ownerUserId: a._id, displayName: "Avni", firstName: "Avni", phone: "9343340600" });
+    const r = await call("POST", `/groups/${g._id}/members`, a, { contactId: c._id });
+    expect(r.status).toBe(201);
+    expect(r.body.displayName).toBe("Avni");
+    const detail = await call("GET", `/groups/${g._id}`, a);
+    const avni = detail.body.members.find((m: any) => m.displayName === "Avni");
+    expect(avni).toMatchObject({ isGuest: true, status: "ACTIVE" });
+    expect(avni.email).toBeUndefined();
+    // the contact now points at the guest, so adding again reuses it
+    const again = await call("POST", `/groups/${g._id}/members`, a, { contactId: c._id });
+    expect(again.body.id).toBe(avni.id);
+  });
+
+  it("adding a contact that uses Speak2Split adds their real account", async () => {
+    const a = mkUser("Arjun");
+    const friend = mkUser("Rahul");
+    const g = mkGroup("Flat", [a]);
+    const c = contacts.insert({ ownerUserId: a._id, targetUserId: friend._id, displayName: "Rahul", firstName: "Rahul" });
+    const r = await call("POST", `/groups/${g._id}/members`, a, { contactId: c._id });
+    expect(r.status).toBe(201);
+    expect(isMember(g, friend)).toBe(true);
+  });
+
+  it("cannot add someone else's contact", async () => {
+    const a = mkUser("Arjun");
+    const b = mkUser("Bela");
+    const g = mkGroup("Flat", [a]);
+    const bContact = contacts.insert({ ownerUserId: b._id, displayName: "Secret", firstName: "Secret", phone: "9000000000" });
+    const r = await call("POST", `/groups/${g._id}/members`, a, { contactId: bContact._id });
+    expect(r.status).toBe(404);
+  });
+
+  it("a name typed into the email field gets a clear message, not 'Validation failed'", async () => {
+    const a = mkUser("Arjun");
+    const g = mkGroup("Flat", [a]);
+    const r = await call("POST", `/groups/${g._id}/members`, a, { email: "Avni" });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/doesn't look like an email/);
+  });
 });
 
 // ---------------------------------------------------------------------------

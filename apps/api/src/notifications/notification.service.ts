@@ -112,7 +112,7 @@ async function attemptFallback(input: NotifyInput, notificationId: string, enabl
 
 async function deliverEmail(input: NotifyInput, notificationId: string) {
   const user = await UserModel.findById(input.userId).lean();
-  if (!user?.email) {
+  if (!user?.email || user.isGuest) {
     await recordDelivery(notificationId, "EMAIL", "SKIPPED_NOT_CONFIGURED", undefined, "User has no email on file");
     return;
   }

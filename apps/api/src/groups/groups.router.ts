@@ -72,7 +72,8 @@ groupsRouter.get("/:groupId", async (req: AuthedRequest, res: Response) => {
     return {
       id: String(m.userId),
       displayName: u?.displayName,
-      email: u?.email,
+      email: u?.isGuest ? undefined : u?.email,
+      isGuest: !!u?.isGuest,
       role: m.role,
       status: m.status,
     };
@@ -85,7 +86,36 @@ groupsRouter.get("/:groupId", async (req: AuthedRequest, res: Response) => {
 // people the requester already knows (a contact of theirs, or someone they
 // share another group with), which is what the voice flow uses when a
 // mentioned contact isn't in the chosen group yet.
-const addMemberSchema = z.union([z.object({ email: z.string().email() }), z.object({ userId: objectId })]);
+const addMemberSchema = z.union([
+  z.object({ email: z.string().email() }),
+  z.object({ userId: objectId }),
+  z.object({ contactId: objectId }),
+]);
+
+/**
+ * Adding one of your own contacts. If they use Speak2Split the contact is
+ * already linked to their account; if not, a guest profile is created (no
+ * login, no email, no phone matching) and linked to the contact so they can
+ * share expenses and voice entries resolve them by name.
+ */
+async function userForContact(ownerUserId: string, contactId: string) {
+  const contact = await ContactModel.findOne({ _id: contactId, ownerUserId });
+  if (!contact) return null;
+  if (contact.targetUserId) {
+    const linked = await UserModel.findOne({ _id: contact.targetUserId, isActive: true });
+    if (linked) return linked;
+  }
+  const displayName = contact.displayName?.trim() || "Guest";
+  const guest = await UserModel.create({
+    email: `guest-${new mongoose.Types.ObjectId().toHexString()}@guest.speak2split.internal`,
+    displayName,
+    firstName: contact.firstName ?? displayName.split(" ")[0],
+    isGuest: true,
+    isActive: true,
+  });
+  await ContactModel.updateOne({ _id: contact._id }, { $set: { targetUserId: guest._id } });
+  return guest;
+}
 
 async function requesterKnowsUser(requesterId: string, targetUserId: string): Promise<boolean> {
   const contact = await ContactModel.exists({ ownerUserId: requesterId, targetUserId });
@@ -100,7 +130,13 @@ groupsRouter.post("/:groupId/members", async (req: AuthedRequest, res: Response)
   if (!isMember) return res.status(403).json({ error: "Not a member of this group" });
 
   const parsed = addMemberSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
+  if (!parsed.success) {
+    const error =
+      typeof req.body?.email === "string"
+        ? "That doesn't look like an email address. Enter the email they signed up with (for example name@gmail.com)."
+        : "Validation failed";
+    return res.status(400).json({ error, details: parsed.error.flatten() });
+  }
 
   let newMember;
   if ("email" in parsed.data) {
@@ -110,6 +146,9 @@ groupsRouter.post("/:groupId/members", async (req: AuthedRequest, res: Response)
         error: "No Speak2Split account found for this email yet. Ask them to sign up first.",
       });
     }
+  } else if ("contactId" in parsed.data) {
+    newMember = await userForContact(req.userId!, parsed.data.contactId);
+    if (!newMember) return res.status(404).json({ error: "Contact not found" });
   } else {
     if (!(await requesterKnowsUser(req.userId!, parsed.data.userId))) {
       return res.status(403).json({ error: "You can only add people from your contacts or groups by name." });

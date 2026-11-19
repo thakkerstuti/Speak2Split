@@ -19,6 +19,8 @@ export interface UserDoc extends Document {
   avatarUrl?: string;
   defaultCurrency: string;
   isActive: boolean;
+  /** A contact added to a group without a Speak2Split account. Cannot sign in, never notified. */
+  isGuest?: boolean;
   authAccounts: AuthAccountSubdoc[];
   createdAt: Date;
   updatedAt: Date;
@@ -44,6 +46,7 @@ const UserSchema = new Schema<UserDoc>({
   avatarUrl: { type: String },
   defaultCurrency: { type: String, default: "INR" },
   isActive: { type: Boolean, default: true },
+  isGuest: { type: Boolean, default: false },
   authAccounts: { type: [AuthAccountSchema], default: [] },
 });
 

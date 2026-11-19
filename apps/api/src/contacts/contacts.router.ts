@@ -18,7 +18,8 @@ contactsRouter.use(requireAuth);
 async function loadExistingIdentities(ownerUserId: string): Promise<{ contacts: ExistingContact[]; users: ExistingUser[] }> {
   const [contacts, users] = await Promise.all([
     ContactModel.find({ ownerUserId }).lean(),
-    UserModel.find({}).select("email normalizedPhone").lean(),
+    // Guests are private to the person who added them — never match other people's contacts to them.
+    UserModel.find({ isGuest: { $ne: true } }).select("email normalizedPhone").lean(),
   ]);
 
   return {
